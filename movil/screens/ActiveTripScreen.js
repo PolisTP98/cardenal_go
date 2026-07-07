@@ -10,13 +10,13 @@ export default function ActiveTripScreen({ navigation }) {
         <View style={styles.container}>
         <View style={styles.mapPlaceholder}>
             <Ionicons name="map-outline" size={60} color={COLORS.textSecondary} />
-            <Text style={styles.mapText}>Simulación de Mapa Activo</Text>
+            <Text style={styles.mapText}>Mapa</Text>
         </View>
 
         <ScrollView style={styles.bottomSheet} contentContainerStyle={styles.bottomSheetContent}>
             <View style={styles.tripStatusRow}>
             <View>
-                <Text style={styles.statusTitle}>🟢 En camino a UPQ</Text>
+                <Text style={styles.statusTitle}>En camino a UPQ</Text>
                 <Text style={styles.etaText}>Llegada estimada: 12 minutos</Text>
             </View>
             <View style={styles.distanceBadge}>
