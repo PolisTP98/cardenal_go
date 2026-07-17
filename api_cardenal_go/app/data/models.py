@@ -22,7 +22,7 @@ from sqlalchemy import(
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geometry
-from database import Base
+from data.database import Base
 
 
 # ---------------------
@@ -226,19 +226,19 @@ class Usuario(Base):
         CheckConstraint(
             "length(matricula) = 9", 
             name = "ck_usuario_matricula"
-        ),
+        ), 
         CheckConstraint(
             "correo_institucional like '%_@upq.edu.mx'", 
             name = "ck_usuario_correo"
-        ),
+        ), 
         CheckConstraint(
             "calificacion_pasajero between 1.00 and 5.00", 
             name = "ck_usuario_calificacion_pasajero"
-        ),
+        ), 
         CheckConstraint(
             "calificacion_conductor between 1.00 and 5.00", 
             name = "ck_usuario_calificacion_conductor"
-        ),
+        ), 
         {"schema": "cgo_usu"}
     )
 

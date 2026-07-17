@@ -1,0 +1,99 @@
+# -------------------------------------------------
+# | REDES PARA AISLAMIENTO Y COMUNICACIÓN INTERNA |
+# -------------------------------------------------
+
+networks:
+  cardenal_go_network:
+    driver: bridge
+
+
+# ------------------------------------------------------
+# | VOLÚMENES PARA GARANTIZAR LA PERSISTENCIA DE DATOS |
+# ------------------------------------------------------
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+
+services:
+  # ------------------------------------------------------
+  # | (1) BASE DE DATOS (PostgreSQL CON SOPORTE PostGIS) |
+  # ------------------------------------------------------
+
+  db:
+    image: postgis/postgis:15-3.4-alpine
+    container_name: cardenal_go_db
+    restart: always
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # ESTABLECER LA PERSISTENCIA DE LOS REGISTROS DE LA BASE DE DATOS
+      - postgres_data:/var/lib/postgresql/data
+      # EJECUTAR EL SCRIPT DE CREACIÓN DE LA BASE DE DATOS AL MONTAR EL CONTENEDOR POR PRIMERA VEZ
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      # ASEGURAR QUE FastAPI NO SE INICIE HASTA QUE Postgres ACEPTE CONEXIONES
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - cardenal_go_network
+
+
+  # --------------------------------------------------------------
+  # | (2) INTERFAZ DE ADMINISTRACIÓN DE BASE DE DATOS (pgAdmin4) |
+  # --------------------------------------------------------------
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cardenal_go_pgadmin
+    user: root
+    restart: always
+    env_file: .env
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${MASTER_USER:-admin@cardenalgo.com}
+      PGADMIN_DEFAULT_PASSWORD: ${MASTER_PASSWORD:-admin_secret}
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
+      PGADMIN_CONFIG_SERVER_MODE: 'True'
+      PGADMIN_CONFIG_CHECK_VERSION: 'False'
+    ports:
+      - "8080:80"
+    volumes:
+      # ESTABLECER LA PERSISTENCIA DE LAS CREDENCIALES DE SERVIDORES EN LA UI
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+    networks:
+      - cardenal_go_network
+
+
+  # -----------------------------------
+  # | (3) BACKEND DE LA API (FastAPI) |
+  # -----------------------------------
+
+  backend:
+    build:
+      context: ./api_cardenal_go
+      dockerfile: Dockerfile
+    container_name: cardenal_go_backend
+    restart: always
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # REFLEJAR CAMBIOS DEL CÓDIGO EN TIEMPO REAL
+      - ./api_cardenal_go:/app
+      - /usr/local/lib/python3.11/site-packages
+    depends_on:
+      db:
+        # FastAPI SE LEVANTA CUANDO LA BASE DE DATOS SEA "healthy"
+        condition: service_healthy
+    networks:
+      - cardenal_go_network
