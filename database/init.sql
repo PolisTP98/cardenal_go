@@ -464,6 +464,27 @@ after insert or update or delete on cgo_adm.reportes
 for each row execute function cgo_aud.fn_auditoria();
 
 
+-- Creacion de tablas adicionales
+/* 1. TABLA PARA GUARDAR LAS PARADAS INTERMEDIAS DE LA RUTA */
+create table cgo_via.paradas_viaje(
+    id bigint generated always as identity primary key,
+    id_viaje int not null references cgo_via.viajes(id),
+    orden smallint not null, -- Indica cuál parada va primero
+    latitud numeric(10, 8) not null,
+    longitud numeric(10, 8) not null
+);
+create index idx_paradas_viaje on cgo_via.paradas_viaje(id_viaje);
+
+/* 2. TABLA PARA EL RASTREO GPS EN VIVO (MIGAS DE PAN) */
+create table cgo_via.historial_ubicaciones_viaje(
+    id bigint generated always as identity primary key,
+    id_viaje int not null references cgo_via.viajes(id),
+    latitud numeric(10, 8) not null,
+    longitud numeric(10, 8) not null,
+    velocidad_kmh smallint, 
+    fecha_hora_registro timestamptz(3) not null default now()
+);
+
 /*
 --------------------------------------------------------------------
 | CREAR ÍNDICES DE OPTIMIZACIÓN DE CONSULTAS EN TABLAS RECURRENTES |
@@ -482,7 +503,82 @@ create index idx_pago_pasajero on cgo_via.pagos_transferencias(id_pasajero);
 create index idx_pago_conductor on cgo_via.pagos_transferencias(id_conductor);
 create index idx_mensaje_chat on cgo_soc.mensajes_chats(id_chat);
 create index idx_notificacion_usuario on cgo_not.notificaciones(id_usuario, leida);
-create index idx_calificacion_evaluado on cgo_adm.calificaciones(id_evaluado);
-create index idx_sancion_usuario on cgo_adm.sanciones(id_usuario) where vigente = true;
-create index idx_chat_viaje on cgo_soc.chats(id_viaje) where id_viaje is not null;
-create index idx_amigo_usuario2 on cgo_soc.amigos(id_usuario2);
+
+--Adicionales
+create index idx_historial_viaje on cgo_via.historial_ubicaciones_viaje(id_viaje);
+create index idx_historial_fecha on cgo_via.historial_ubicaciones_viaje(fecha_hora_registro);
+
+/*
+-------------------------------------------------
+| INSERTAR DATOS EN LAS TABLAS DE TIPO CATÁLOGO |
+-------------------------------------------------
+*/
+
+insert into cgo_cat.roles(nombre, descripcion) values
+('Pasajero', 'Alumno o docente que reserva un asiento en un trayecto'),
+('Conductor', 'Alumno o docente validado que comparte su vehículo'),
+('Administrador', 'Personal institucional con control de reportes y penalizaciones');
+
+insert into cgo_cat.metodos_pago(nombre) values
+('Efectivo'),
+('Transferencia SPEI');
+
+insert into cgo_cat.estatus_viajes(nombre, descripcion) values
+('Programado', 'El viaje está abierto y recibe solicitudes'),
+('En curso', 'El conductor inició el trayecto en el mapa'),
+('Finalizado', 'El viaje concluyó exitosamente en el destino'),
+('Cancelado', 'El viaje fue anulado por motivos de fuerza mayor');
+
+insert into cgo_cat.estatus_solicitudes(nombre, descripcion) values
+('Pendiente', 'Esperando la aprobación o rechazo del conductor'),
+('Negociando', 'El conductor propuso un punto intermedio alternativo'),
+('Aceptada', 'El pasajero cuenta con su lugar reservado en el vehículo'),
+('Rechazada', 'El conductor denegó la solicitud de reserva'),
+('Cancelada', 'El pasajero decidió bajarse del viaje antes de iniciar');
+
+insert into cgo_cat.motivos_reportes(nombre, gravedad) values
+('Conducción temeraria', 8),
+('Acoso o lenguaje inapropiado', 10),
+('No se presentó al punto de encuentro', 5),
+('Vehículo diferente al registrado', 6),
+('Cobro excesivo o por fuera de la app', 7),
+('Limpieza deficiente del auto', 3);
+
+insert into cgo_cat.estatus_reportes(nombre, descripcion) values
+('Pendiente', 'El reporte fue enviado y espera revisión'),
+('En revisión', 'Un administrador analiza las evidencias del caso'),
+('Resuelto', 'Se ha tomado una determinación y cerrado el caso'),
+('Descartado', 'El reporte no cuenta con fundamentos o pruebas válidas');
+
+insert into cgo_cat.estatus_sociales(nombre) values
+('Pendiente'),
+('Aceptado'),
+('Bloqueado');
+
+insert into cgo_cat.tipos_chats(nombre) values
+('Directo'),
+('Viaje');
+
+insert into cgo_cat.estatus_usuarios(nombre, dias_sancion) values
+('Advertido', 0),
+('Infracción leve', 1),
+('Infracción media', 3),
+('Infracción grave', 3);
+
+insert into cgo_cat.estatus_usuarios(nombre) values
+('Activo'),
+('Baja definitiva');
+
+insert into cgo_cat.tipos_notificaciones(nombre) values
+('La solicitud de viaje fue recibida'),
+('El viaje ha sido aceptado'),
+('El conductor está en camino'),
+('El conductor llegó al punto de encuentro'),
+('El viaje ha sido cancelado'),
+('Tienes un nuevo mensaje');
+
+insert into cgo_cat.estatus_pagos(nombre, descripcion) values
+('Pendiente', 'La transferencia SPEI se encuentra en proceso de validación'),
+('Completada', 'Los fondos fueron liquidados exitosamente en la cuenta del conductor'),
+('Fallida', 'La transacción fue rechazada por la pasarela bancaria'),
+('Reembolsado', 'El dinero fue devuelto al pasajero por la cancelación del viaje');
