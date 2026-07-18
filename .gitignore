@@ -179,3 +179,17 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Dependencias de Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Archivos de Expo
+.expo/
+dist/
+web-build/
+
+# Archivos de sistema operativo (opcional pero recomendado)
+.DS_Store
+Thumbs.db
