@@ -26,7 +26,7 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 # FUNCIÓN PARA MANEJAR LAS SESIONES DE LAS REQUESTS
-def get_db():
+def getDB():
     db = SessionLocal()
     try:
         yield db
