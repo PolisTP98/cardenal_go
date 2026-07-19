@@ -5,6 +5,7 @@
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from data.database import SessionLocal, engine
 from data.models import Base
 from registros_base import poblarBaseDeDatos
@@ -46,7 +47,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title = "API Cardenal GO", lifespan = lifespan)
 
-# REGISTRAR DINÁMICAMENTE LOS ROUTERS
+
+# ---------------------------------------
+# | CONFIGURACIÓN DE MIDDLEWARE DE CORS |
+# ---------------------------------------
+
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins = ["*"], 
+    allow_credentials = True, 
+    allow_methods = ["*"], 
+    allow_headers = ["*"], 
+)
+
+
+# ---------------------------------------
+# | REGISTRAR DINÁMICAMENTE LOS ROUTERS |
+# ---------------------------------------
+
 app.include_router(cgo_usu.router)
 app.include_router(cgo_via.router)
 app.include_router(cgo_soc.router)

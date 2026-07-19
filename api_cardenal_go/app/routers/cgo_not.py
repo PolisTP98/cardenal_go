@@ -2,13 +2,13 @@
 # | IMPORTAR MÓDULOS NECESARIOS |
 # -------------------------------
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from data.database import getDB
 from data.models import Notificacion
 from models import schemas
-from security.auth import verifyToken, requireRole
+from security.auth import verifyToken, requireRole, verifyResourceOwnership
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF
 
 
@@ -16,7 +16,7 @@ from utils.reportes import generarReporteWord, generarReporteExcel, generarRepor
 # | INICIALIZAR LA INSTANCIA DEL ROUTER |
 # ---------------------------------------
 
-router = APIRouter(prefix = "/api/not", tags = ["Notificaciones"])
+router = APIRouter(prefix = "/api/not", tags = ["Notificaciones (cgo_not)"])
 
 
 # --------------------------------------
@@ -31,34 +31,69 @@ def enviarNotificacion(notificacion_in: schemas.NotificacionCreate, db: Session 
     db.refresh(nueva_notificacion)
     return nueva_notificacion
 
-@router.get("/{usuario_id}", response_model = List[schemas.NotificacionResponse], summary = "Obtener todas las notificaciones de un usuario por su ID")
+@router.get("/", response_model=List[schemas.NotificacionResponse], summary="Obtener todas las notificaciones")
+def obtenerTodasLasNotificaciones(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Administrador", "Superadministrador"]))):
+    return db.query(Notificacion).offset(skip).limit(limit).all()
+
+@router.get("/buscar", response_model=List[schemas.NotificacionResponse], summary="Buscar notificaciones con filtros dinámicos")
+def buscarNotificaciones(
+    usuario_id: Optional[int] = Query(None, description = "Filtrar por ID exacto del usuario receptor"), 
+    titulo: Optional[str] = Query(None, description = "Filtrar por título (coincidencia parcial)"), 
+    mensaje: Optional[str] = Query(None, description = "Filtrar por mensaje (coincidencia parcial)"), 
+    leida: Optional[bool] = Query(None, description = "Filtrar por estado de lectura (true/false)"), 
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(verifyToken)
+):
+    query = db.query(Notificacion)
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    current_user_id = int(payload.get("sub"))
+    if not is_admin:
+        query = query.filter(Notificacion.id_usuario == current_user_id)
+    elif usuario_id:
+        query = query.filter(Notificacion.id_usuario == usuario_id)
+    if titulo:
+        query = query.filter(Notificacion.titulo.ilike(f"%{titulo}%"))
+    if mensaje:
+        query = query.filter(Notificacion.mensaje.ilike(f"%{mensaje}%"))
+    if leida is not None:
+        query = query.filter(Notificacion.leida == leida)
+    return query.offset(skip).limit(limit).all()
+
+@router.get("/usuario/{usuario_id}", response_model = List[schemas.NotificacionResponse], summary = "Obtener todas las notificaciones de un usuario por su ID")
 def obtenerNotificacionesUsuario(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    if str(payload.get("sub")) != str(usuario_id): raise HTTPException(status_code = 403, detail = "No autorizado")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(usuario_id), is_admin)
     notificaciones = db.query(Notificacion).filter(Notificacion.id_usuario == usuario_id).all()
     return notificaciones
+
+@router.get("/{notificacion_id}", response_model = schemas.NotificacionResponse, summary = "Obtener notificación por ID")
+def obtenerNotificacionPorId(notificacion_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    notificacion = db.query(Notificacion).filter(Notificacion.id == notificacion_id).first()
+    if not notificacion:
+        raise HTTPException(status_code = 404, detail = "Notificación no encontrada")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(notificacion.id_usuario), is_admin)
+    return notificacion
 
 @router.patch("/{notificacion_id}/leer", summary = "Marcar una notificación como leída por su ID")
 def marcarNotificacionLeida(notificacion_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     notificacion = db.query(Notificacion).filter(Notificacion.id == notificacion_id).first()
     if not notificacion:
         raise HTTPException(status_code = 404, detail = "Notificación no encontrada")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(notificacion.id_usuario), is_admin)
     notificacion.leida = True
     db.commit()
     return {"status": "ok", "message": "Notificación marcada como leída"}
 
-@router.get("/reportes/{formato}", summary = "Generar reporte de notificaciones")
-def exportarReporteNotificaciones(
-    formato: str, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(requireRole(["Superadministrador"]))
-):
-    lista_notificaciones = db.query(Notificacion).all()
-    titulo = "historial_de_notificaciones-cardenal_go"
-    if formato.lower() == "pdf":
-        return generarReportePDF(lista_notificaciones, titulo)
-    elif formato.lower() == "word":
-        return generarReporteWord(lista_notificaciones, titulo)
-    elif formato.lower() == "excel":
-        return generarReporteExcel(lista_notificaciones, titulo)
-    else:
-        raise HTTPException(status_code = 400, detail = "Formato no soportado. Usa PDF, Word o Excel")
+@router.delete("/{notificacion_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar una notificación por ID")
+def eliminarNotificacion(notificacion_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    notificacion = db.query(Notificacion).filter(Notificacion.id == notificacion_id).first()
+    if not notificacion:
+        raise HTTPException(status_code = 404, detail = "Notificación no encontrada")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(notificacion.id_usuario), is_admin)
+    db.delete(notificacion)
+    db.commit()
