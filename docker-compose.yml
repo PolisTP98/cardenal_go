@@ -84,16 +84,18 @@ services:
       dockerfile: Dockerfile
     container_name: cardenal_go_backend
     restart: always
+    # SOBREESCRIBIR EL CMD DEL Dockerfile PARA HABILITAR EL HOT-RELOAD
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file: .env
+    environment:
+      - WATCHFILES_FORCE_POLLING=true
     ports:
       - "8000:8000"
     volumes:
-      # REFLEJAR CAMBIOS DEL CÓDIGO EN TIEMPO REAL
+      # MONTAR EL CÓDIGO FUENTE LOCAL DENTRO DE /app
       - ./api_cardenal_go:/app
-      - /usr/local/lib/python3.11/site-packages
     depends_on:
       db:
-        # FastAPI SE LEVANTA CUANDO LA BASE DE DATOS SEA "healthy"
         condition: service_healthy
     networks:
       - cardenal_go_network

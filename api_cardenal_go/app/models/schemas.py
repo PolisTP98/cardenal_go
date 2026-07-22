@@ -237,10 +237,17 @@ class EstatusPagoResponse(EstatusPagoCreate):
 # INFORMACIÓN DE LOS USUARIOS (CONDUCTORES, PASAJEROS Y ADMINISTRADORES)
 class UsuarioCreate(BaseModel):
     nombre_completo: str = Field(..., max_length = 255, examples = ["Ysisidro Mora Jiménez Quiñones"])
-    matricula: str = Field(..., min_length = 9, max_length = 9, pattern = r"^[0-9]{9}$")
-    correo_institucional: EmailStr = Field(..., pattern = r".+@upq\.edu\.mx$")
+    matricula: str = Field(..., min_length = 9, max_length = 9, pattern = r"^[0-9]{9}$", examples = ["123456789"])
+    correo_institucional: EmailStr = Field(..., examples = ["cardenal@upq.edu.mx"])
     contrasena_raw: str = Field(..., min_length = 8, description = "Contraseña en texto plano para procesar hash")
-    url_foto_perfil: Optional[str] = Field("cardenal_upq.png", max_length = 255)
+    url_foto_perfil: Optional[str] = Field(default = "cardenal_upq.png", max_length = 255)
+    # VALIDAR EL DOMINIO DEL CORREO INSTITUCIONAL
+    @field_validator("correo_institucional")
+    @classmethod
+    def validar_correo_upq(cls, v: str) -> str:
+        if not v.endswith("@upq.edu.mx"):
+            raise ValueError("El correo debe pertenecer al dominio @upq.edu.mx")
+        return v
 
 class UsuarioUpdate(BaseModel):
     nombre_completo: Optional[str] = Field(None, max_length = 255)
@@ -317,12 +324,12 @@ class VehiculoCreate(BaseModel):
     placa: str = Field(..., max_length = 15)
     color: str = Field(..., max_length = 30)
     modelo: str = Field(..., max_length = 50)
-    anio: int = Field(..., gt=1990, le = datetime.now().year + 1)
-    fotos: List[str] = Field(..., min_length = 1)
+    anio: int
+    fotos: Dict[str, Any] = Field(..., min_length = 1)
 
 class VehiculoUpdate(BaseModel):
     color: Optional[str] = Field(None, max_length = 30)
-    fotos: Optional[List[str]] = None
+    fotos: Optional[Dict[str, Any]] = None
     model_config = ConfigDict(extra = "forbid")
 
 class VehiculoResponse(BaseModel):
@@ -332,7 +339,7 @@ class VehiculoResponse(BaseModel):
     color: str
     modelo: str
     anio: int
-    fotos: List[str]
+    fotos: Dict[str, Any]
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)
 
