@@ -8,7 +8,7 @@ from typing import List, Optional
 from data.database import getDB
 from data.models import Amigo, Chat, MensajeChat, Usuario
 from models import schemas
-from security.auth import verifyToken
+from security.auth import verifyToken, requireRole, verifyResourceOwnership
 
 
 # ---------------------------------------

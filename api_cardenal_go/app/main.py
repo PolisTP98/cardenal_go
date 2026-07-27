@@ -4,7 +4,10 @@
 
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import IntegrityError
 from data.database import SessionLocal, engine
 from data.models import Base
 from registros_base import poblarBaseDeDatos
@@ -46,7 +49,38 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title = "API Cardenal GO", lifespan = lifespan)
 
-# REGISTRAR DINÁMICAMENTE LOS ROUTERS
+@app.exception_handler(IntegrityError)
+async def integrity_exception_handler(request: Request, exc: IntegrityError):
+    # DETECTA QUÉ LLAVE VIOLÓ LA RESTRICCIÓN UNIQUE O FOREIGN KEY
+    error_msg = str(exc.orig)
+    if "key" in error_msg.lower():
+        # EXTRAE DE FORMA LIMPIA EL DETALLE DEL ERROR DE PostgreSQL
+        detalle = error_msg.split("DETAIL:")[-1].strip() if "DETAIL:" in error_msg else "Violación de restricción única o clave foránea"
+    else:
+        detalle = "Los datos proporcionados violan las reglas de integridad de la Base de Datos"
+    return JSONResponse(
+        status_code = status.HTTP_400_BAD_REQUEST,
+        content = {"detail": detalle}
+    )
+
+
+# ---------------------------------------
+# | CONFIGURACIÓN DE MIDDLEWARE DE CORS |
+# ---------------------------------------
+
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins = ["*"], 
+    allow_credentials = True, 
+    allow_methods = ["*"], 
+    allow_headers = ["*"], 
+)
+
+
+# ---------------------------------------
+# | REGISTRAR DINÁMICAMENTE LOS ROUTERS |
+# ---------------------------------------
+
 app.include_router(cgo_usu.router)
 app.include_router(cgo_via.router)
 app.include_router(cgo_soc.router)

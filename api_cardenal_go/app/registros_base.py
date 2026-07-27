@@ -114,7 +114,7 @@ def poblarBaseDeDatos(db: Session):
         {"nombre": "Infracción leve", "dias_sancion": 1}, 
         {"nombre": "Infracción media", "dias_sancion": 3}, 
         {"nombre": "Infracción grave", "dias_sancion": 3}, 
-        {"nombre": "Baja definitiva", "dias_sancion": None}
+        {"nombre": "Inactivo", "dias_sancion": None}
     ]
     for eu in estatus_usuarios_data:
         existe = db.query(EstatusUsuario).filter(EstatusUsuario.nombre == eu["nombre"]).first()
