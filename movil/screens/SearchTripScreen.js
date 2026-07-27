@@ -1,136 +1,106 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
+import CustomInput from '../components/CustomInput';
 import PrimaryButton from '../components/PrimaryButton';
 import Card from '../components/Card';
 
+import LocationSearchInput from '../components/LocationSearchInput';
+
 export default function SearchTripScreen({ navigation }) {
-    return (
-        <View style={styles.container}>
-        <TopHeader title="Cardenal GO" />
-        <ScrollView contentContainerStyle={styles.content}>
-            
-            <Card style={styles.searchCard}>
-            <Text style={styles.sectionTitle}>¿A dónde vas?</Text>
-            <View style={styles.inputMock}>
-                <Ionicons name="radio-button-on" size={20} color={COLORS.textSecondary} />
-                <Text style={styles.inputText}>UPQ</Text>
-            </View>
-            <View style={styles.inputMock}>
-                <Ionicons name="location-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.inputText}>Destino</Text>
-            </View>
-            <View style={styles.row}>
-                <View style={[styles.inputMock, { flex: 1, marginRight: 8 }]}>
-                <Ionicons name="calendar-outline" size={20} color={COLORS.textSecondary} />
-                <Text style={styles.inputText}>Hoy 14:30</Text>
-                </View>
-                <View style={[styles.inputMock, { flex: 1, marginLeft: 8 }]}>
-                <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} />
-                <Text style={styles.inputText}>1 Pasajero</Text>
-                </View>
-            </View>
-            <PrimaryButton 
-                title="Buscar viajes" 
-                onPress={() => navigation.navigate('TripResults')} 
-                style={{ marginTop: 10 }}
-            />
-            </Card>
+  const [origen, setOrigen] = useState('UPQ');
+  const [destino, setDestino] = useState('');
+  
+  // Prefill with today's date formatted as YYYY-MM-DD
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [fecha, setFecha] = useState(todayStr);
 
-            <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Viajes sugeridos</Text>
-            <Text style={styles.seeAll}>Ver todos</Text>
-            </View>
+  const handleSearch = () => {
+    if (!destino) {
+      Alert.alert('Destino requerido', 'Por favor ingresa un destino para buscar viajes.');
+      return;
+    }
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <Card style={styles.suggestedCard}>
-                <Text style={styles.time}>Salida 14:45</Text>
-                <Text style={styles.price}>$35</Text>
-                <Text style={styles.driver}>Carlos M. ⭐ 4.9</Text>
-                <Text style={styles.seats}>2 asientos</Text>
-            </Card>
-            <Card style={styles.suggestedCard}>
-                <Text style={styles.time}>Salida 15:10</Text>
-                <Text style={styles.price}>$30</Text>
-                <Text style={styles.driver}>Ana S. ⭐ 5.0</Text>
-                <Text style={styles.seats}>1 asiento</Text>
-            </Card>
-            </ScrollView>
-        </ScrollView>
-        </View>
-    );
+    // Navigate to results screen with search filters
+    navigation.navigate('TripResults', {
+      origen,
+      destino,
+      fecha,
+    });
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <TopHeader title="Buscar Viaje" showBack onBackPress={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>¿A dónde vas hoy?</Text>
+        <Text style={styles.subtitle}>Encuentra conductores que se dirigen a tu mismo destino.</Text>
+
+        <Card style={styles.searchCard}>
+          <LocationSearchInput
+            label="Punto de Origen"
+            placeholder="Ej. UPQ o dirección de salida"
+            value={origen}
+            onChangeText={setOrigen}
+            iconName="navigate-circle-outline"
+            iconColor="green"
+            onSelectLocation={(loc) => setOrigen(loc.address || loc.name)}
+          />
+
+          <LocationSearchInput
+            label="Destino Principal"
+            placeholder="¿A qué colonia o lugar vas?"
+            value={destino}
+            onChangeText={setDestino}
+            iconName="location-sharp"
+            iconColor="red"
+            onSelectLocation={(loc) => setDestino(loc.address || loc.name)}
+          />
+
+          <CustomInput
+            label="Fecha del Viaje (YYYY-MM-DD)"
+            placeholder="Ej. 2026-07-20"
+            value={fecha}
+            onChangeText={setFecha}
+          />
+
+          <PrimaryButton
+            title="Buscar Viajes Disponibles"
+            onPress={handleSearch}
+            style={styles.searchBtn}
+          />
+        </Card>
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: COLORS.background 
-    },
-    content: { 
-        padding: SIZES.padding 
-    },
-    searchCard: { 
-        padding: 20 
-    },
-    sectionTitle: { 
-        fontSize: 18, 
-        fontWeight: 'bold', 
-        color: COLORS.text, 
-        marginBottom: 16 
-    },
-    inputMock: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        backgroundColor: COLORS.inputBackground, 
-        padding: 12, 
-        borderRadius: SIZES.radius, 
-        marginBottom: 12 
-    },
-    inputText: { 
-        marginLeft: 10, 
-        fontSize: 16, 
-        color: COLORS.text 
-    },
-    row: { 
-        flexDirection: 'row', 
-        justifyContent: 'space-between' 
-    },
-    sectionHeader: { 
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginTop: 24, 
-        marginBottom: 12 
-    },
-    seeAll: { 
-        color: COLORS.primary, 
-        fontWeight: '600' 
-    },
-    suggestedCard: { 
-        width: 150, 
-        marginRight: 16, 
-        padding: 16 
-    },
-    time: { 
-        fontSize: 14, 
-        color: COLORS.textSecondary, 
-        marginBottom: 8 
-    },
-    price: { 
-        fontSize: 20, 
-        fontWeight: 'bold', 
-        color: COLORS.text, 
-        marginBottom: 8 
-    },
-    driver: { 
-        fontSize: 12, 
-        color: COLORS.text, 
-        marginBottom: 4 
-    },
-    seats: { 
-        fontSize: 12, 
-        color: COLORS.success 
-    },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  content: {
+    padding: SIZES.padding,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  searchCard: {
+    padding: 16,
+  },
+  searchBtn: {
+    marginTop: 12,
+  },
 });

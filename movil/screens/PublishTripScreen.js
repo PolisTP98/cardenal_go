@@ -1,100 +1,394 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import CustomInput from '../components/CustomInput';
 import PrimaryButton from '../components/PrimaryButton';
+import LoadingOverlay from '../components/LoadingOverlay';
 import Card from '../components/Card';
+import { useAuth } from '../src/context/AuthContext';
+import { getConductorByUsuario, getVehiculos } from '../src/api/usuariosApi';
+import { crearViaje, UPQ_COORDS } from '../src/api/viajesApi';
+import LocationSearchInput from '../components/LocationSearchInput';
+import MapaRutas from '../components/MapaRutas';
 
 export default function PublishTripScreen({ navigation }) {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [vehicle, setVehicle] = useState(null);
+
+  // Form Fields & Coordinates
+  const [origen, setOrigen] = useState('UPQ (Universidad Politécnica de Querétaro)');
+  const [destino, setDestino] = useState('Centro Histórico de Querétaro');
+  const [origenCoords, setOrigenCoords] = useState({ latitude: 20.5891, longitude: -100.4376 });
+  const [destinoCoords, setDestinoCoords] = useState({ latitude: 20.5888, longitude: -100.3899 });
+  const [selectingTarget, setSelectingTarget] = useState('destino'); // 'origen' | 'destino'
+  const [fecha, setFecha] = useState('');
+  const [hora, setHora] = useState('');
+  const [asientos, setAsientos] = useState('3');
+  const [precio, setPrecio] = useState('25');
+
+  const waypoints = useMemo(() => [
+    { ...origenCoords, title: `Origen: ${origen}`, color: 'green' },
+    { ...destinoCoords, title: `Destino: ${destino}`, color: 'red' },
+  ], [origenCoords, destinoCoords, origen, destino]);
+
+  useEffect(() => {
+    const checkConductorAndVehicle = async () => {
+      try {
+        const conductor = await getConductorByUsuario(user.id);
+        const vehiculosList = await getVehiculos(conductor.id);
+        if (vehiculosList && vehiculosList.length > 0) {
+          setVehicle(vehiculosList[0]);
+        } else {
+          Alert.alert('Vehículo requerido', 'Debes registrar un vehículo para poder publicar un viaje.', [
+            { text: 'Ir a Registro', onPress: () => navigation.navigate('DriverRegistration') },
+            { text: 'Cancelar', onPress: () => navigation.goBack() }
+          ]);
+        }
+      } catch (err) {
+        Alert.alert('Perfil incompleto', 'No pudimos verificar tus datos de conductor.', [
+          { text: 'Registrar', onPress: () => navigation.navigate('DriverRegistration') },
+          { text: 'Atrás', onPress: () => navigation.goBack() }
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkConductorAndVehicle();
+
+    // Prefill date with today's date formatted as YYYY-MM-DD
+    const today = new Date();
+    const formattedDate = today.toISOString().split('T')[0];
+    setFecha(formattedDate);
+    
+    // Prefill time with current time + 1 hour (HH:MM)
+    const future = new Date(today.getTime() + 60 * 60 * 1000);
+    const hours = String(future.getHours()).padStart(2, '0');
+    const minutes = String(future.getMinutes()).padStart(2, '0');
+    setHora(`${hours}:${minutes}`);
+  }, []);
+
+  const handlePublish = async () => {
+    if (!origen || !destino || !fecha || !hora || !asientos || !precio) {
+      Alert.alert('Campos incompletos', 'Por favor llena todos los campos del viaje.');
+      return;
+    }
+
+    // Basic date/time format validations
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(fecha)) {
+      Alert.alert('Formato de fecha incorrecto', 'Usa el formato YYYY-MM-DD.');
+      return;
+    }
+
+    const timeRegex = /^\d{2}:\d{2}$/;
+    if (!timeRegex.test(hora)) {
+      Alert.alert('Formato de hora incorrecto', 'Usa el formato HH:MM.');
+      return;
+    }
+
+    const numericSeats = parseInt(asientos);
+    if (isNaN(numericSeats) || numericSeats <= 0) {
+      Alert.alert('Asientos inválidos', 'El número de asientos debe ser mayor a 0.');
+      return;
+    }
+
+    const numericPrice = parseFloat(precio);
+    if (isNaN(numericPrice) || numericPrice < 0) {
+      Alert.alert('Tarifa inválida', 'La aportación sugerida debe ser 0 o mayor.');
+      return;
+    }
+
+    if (!vehicle) {
+      Alert.alert('Vehículo no seleccionado', 'Registra un vehículo para continuar.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const tripData = {
+        id_vehiculo: vehicle.id,
+        id_estatus: 1, // Programado
+        ubicacion_inicio: {
+          type: 'Point',
+          coordinates: [origenCoords.longitude, origenCoords.latitude],
+        }, 
+        ubicacion_destino: {
+          type: 'Point',
+          coordinates: [destinoCoords.longitude, destinoCoords.latitude],
+        },
+        nombre_origen: origen,
+        nombre_destino: destino,
+        precio_sugerido: numericPrice,
+        fecha: fecha,
+        hora_inicio: `${hora}:00`, // Include seconds
+        asientos_totales: numericSeats,
+      };
+
+      await crearViaje(tripData);
+
+      Alert.alert('¡Viaje Publicado!', 'Tu viaje se encuentra listo para recibir solicitudes de pasajeros.', [
+        { text: 'Genial', onPress: () => navigation.navigate('DriverDashboard') }
+      ]);
+    } catch (err) {
+      Alert.alert('Error al publicar', err.displayMessage || 'Ocurrió un error al registrar el viaje.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
     return (
-        <View style={styles.container}>
-        <TopHeader title="Publicar viaje" showBack onBackPress={() => navigation.goBack()} />
-        <ScrollView contentContainerStyle={styles.content}>
-            <Text style={styles.callout}>¡Hay que darnos una mano entre Cardenales!</Text>
-            
-            <View style={styles.steps}>
-            <Text style={[styles.stepActive]}>1 Ruta</Text>
-            <Text style={styles.stepInactive}>2 Tiempo</Text>
-            <Text style={styles.stepInactive}>3 Asientos</Text>
-            <Text style={styles.stepInactive}>4 Reseña</Text>
-            </View>
-
-            <Card>
-            <Text style={styles.sectionTitle}>Detalle de la ruta</Text>
-            <CustomInput label="Origen" placeholder="Universidad Politécnica de Querétaro" />
-            <CustomInput label="Destino" placeholder="¿A dónde vas?" />
-            </Card>
-
-            <Card>
-            <Text style={styles.sectionTitle}>Agendar</Text>
-            <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 8 }}><CustomInput label="Fecha" placeholder="mm/dd/yyyy" /></View>
-                <View style={{ flex: 1, marginLeft: 8 }}><CustomInput label="Hora de salida" placeholder="--:--" /></View>
-            </View>
-            </Card>
-
-            <Card>
-            <Text style={styles.sectionTitle}>Capacidad y tarifa</Text>
-            <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 8 }}><CustomInput label="Asientos disponibles" placeholder="3" keyboardType="numeric" /></View>
-                <View style={{ flex: 1, marginLeft: 8 }}><CustomInput label="Contribución sugerida" placeholder="$ 25" keyboardType="numeric" /></View>
-            </View>
-            <Text style={styles.infoText}>Calculada con IA. Según las tarifas estándar de la UPQ para rutas.</Text>
-            </Card>
-
-            <PrimaryButton title="Publicar viaje" onPress={() => navigation.navigate('Home')} style={{ marginTop: 10 }} />
-        </ScrollView>
-        </View>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Cargando datos del conductor...</Text>
+      </View>
     );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <TopHeader title="Publicar Viaje" showBack onBackPress={() => navigation.goBack()} />
+      <LoadingOverlay visible={submitting} message="Publicando viaje..." />
+
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>Crea una nueva ruta</Text>
+        <Text style={styles.subtitle}>Comparte los gastos de tu trayecto y ayuda a tus compañeros.</Text>
+
+        {vehicle && (
+          <Card style={styles.vehicleCard}>
+            <View style={styles.vehicleRow}>
+              <Ionicons name="car-sport" size={24} color={COLORS.primary} />
+              <View style={styles.vehicleInfo}>
+                <Text style={styles.vehicleTitle}>{vehicle.modelo} ({vehicle.color})</Text>
+                <Text style={styles.vehiclePlate}>Placa: {vehicle.placa}</Text>
+              </View>
+            </View>
+          </Card>
+        )}
+
+        <Card style={{ zIndex: 20 }}>
+          <Text style={styles.sectionTitle}>Ruta del Viaje</Text>
+          <LocationSearchInput
+            label="Origen"
+            placeholder="Ej. UPQ o tu dirección de salida"
+            value={origen}
+            onChangeText={setOrigen}
+            iconName="navigate-circle-outline"
+            iconColor="green"
+            onSelectLocation={(loc) => {
+              setOrigen(loc.address || loc.name);
+              setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
+            }}
+          />
+          <LocationSearchInput
+            label="Destino"
+            placeholder="¿A dónde vas?"
+            value={destino}
+            onChangeText={setDestino}
+            iconName="location-sharp"
+            iconColor="red"
+            onSelectLocation={(loc) => {
+              setDestino(loc.address || loc.name);
+              setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
+            }}
+          />
+
+          <View style={styles.selectorModeRow}>
+            <Text style={styles.selectorLabel}>Toca el mapa para definir:</Text>
+            <View style={styles.selectorBtns}>
+              <TouchableOpacity
+                style={[styles.modeBtn, selectingTarget === 'origen' && styles.modeBtnActive]}
+                onPress={() => setSelectingTarget('origen')}
+              >
+                <Text style={[styles.modeBtnText, selectingTarget === 'origen' && styles.modeBtnTextActive]}>🟢 Origen</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeBtn, selectingTarget === 'destino' && styles.modeBtnActive]}
+                onPress={() => setSelectingTarget('destino')}
+              >
+                <Text style={[styles.modeBtnText, selectingTarget === 'destino' && styles.modeBtnTextActive]}>🔴 Destino</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <MapaRutas
+            interactive={true}
+            height={220}
+            waypoints={waypoints}
+            onMapPress={(loc) => {
+              if (selectingTarget === 'origen') {
+                setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                if (loc.address) {
+                  setOrigen(loc.address);
+                }
+              } else {
+                setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                if (loc.address) {
+                  setDestino(loc.address);
+                }
+              }
+            }}
+          />
+        </Card>
+
+        <Card>
+          <Text style={styles.sectionTitle}>Agenda y Capacidad</Text>
+          <View style={styles.row}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <CustomInput
+                label="Fecha (YYYY-MM-DD)"
+                placeholder="Ej. 2026-07-20"
+                value={fecha}
+                onChangeText={setFecha}
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <CustomInput
+                label="Hora (HH:MM)"
+                placeholder="Ej. 14:30"
+                value={hora}
+                onChangeText={setHora}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <CustomInput
+                label="Asientos Disponibles"
+                placeholder="Ej. 3"
+                keyboardType="numeric"
+                value={asientos}
+                onChangeText={setAsientos}
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <CustomInput
+                label="Aportación ($)"
+                placeholder="Ej. 25"
+                keyboardType="numeric"
+                value={precio}
+                onChangeText={setPrecio}
+              />
+            </View>
+          </View>
+        </Card>
+
+        <PrimaryButton
+          title="Publicar Viaje"
+          onPress={handlePublish}
+          style={styles.publishBtn}
+        />
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.background
-    },
-    content: {
-        padding: SIZES.padding
-    },
-    callout: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: COLORS.text,
-        textAlign: 'center',
-        marginBottom: 16
-    },
-    steps: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 20
-    },
-    stepActive: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: COLORS.primary,
-        borderBottomWidth: 2,
-        borderBottomColor: COLORS.primary,
-        paddingBottom: 4
-    },
-    stepInactive: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        paddingBottom: 4
-    },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: COLORS.text,
-        marginBottom: 12
-    },
-    row: {
-        flexDirection: 'row'
-    },
-    infoText: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-        marginTop: -8,
-        marginBottom: 8
-    },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  content: {
+    padding: SIZES.padding,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 15,
+    color: COLORS.textSecondary,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  vehicleCard: {
+    padding: 12,
+    marginBottom: 16,
+    backgroundColor: COLORS.surface,
+  },
+  vehicleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  vehicleInfo: {
+    marginLeft: 12,
+  },
+  vehicleTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  vehiclePlate: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  publishBtn: {
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  selectorModeRow: {
+    marginVertical: 8,
+  },
+  selectorLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+  },
+  selectorBtns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  modeBtnActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  modeBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  modeBtnTextActive: {
+    color: '#FFF',
+  },
 });

@@ -1,44 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../src/context/AuthContext';
 import { getViajesDisponibles } from '../src/api/viajesApi';
 import { COLORS, SIZES } from '../components/Theme';
-import TopHeader from '../components/TopHeader';
 import Card from '../components/Card';
+import StatusBadge from '../components/StatusBadge';
+import TopHeader from '../components/TopHeader';
 import EmptyState from '../components/EmptyState';
 
-export default function TripResultsScreen({ route, navigation }) {
-  const { destino, fecha } = route.params || {};
-
-  const [loading, setLoading] = useState(true);
+export default function PassengerDashboardScreen({ navigation }) {
+  const { user, logout } = useAuth();
   const [viajes, setViajes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchResults = async () => {
-    setLoading(true);
+  const fetchAvailableTrips = async () => {
     try {
-      // Query trips by date from API
-      const data = await getViajesDisponibles({ fecha });
-      
-      // Filter by destination locally
-      const filtered = data.filter(trip => {
-        const tripDest = (trip.nombre_destino || '').toLowerCase();
-        const searchDest = (destino || '').toLowerCase();
-        return tripDest.includes(searchDest);
-      });
-
-      setViajes(filtered);
+      const data = await getViajesDisponibles();
+      setViajes(data);
     } catch (error) {
-      console.error('Error searching trips:', error);
-      Alert.alert('Error de búsqueda', error.displayMessage || 'No se pudieron cargar los resultados.');
+      console.error('Error fetching available trips:', error);
+      Alert.alert('Error de conexión', error.displayMessage || 'No se pudieron cargar los viajes disponibles.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchResults();
-  }, [destino, fecha]);
+    fetchAvailableTrips();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchAvailableTrips();
+  };
 
   const renderTripCard = ({ item }) => {
     const driverName = item.vehiculo?.conductor?.usuario?.nombre_completo || 'Conductor';
@@ -99,35 +97,77 @@ export default function TripResultsScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TopHeader title="Resultados de Búsqueda" showBack onBackPress={() => navigation.goBack()} />
+      <TopHeader
+        title="Cardenal GO"
+        rightIcon={() => (
+          <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.profileBtn}>
+            <Ionicons name="person-circle-outline" size={26} color={COLORS.primary} />
+          </TouchableOpacity>
+        )}
+      />
 
-      <View style={styles.searchSummary}>
-        <Text style={styles.summaryTitle}>Buscando ruta hacia:</Text>
-        <Text style={styles.summaryDetails}>
-          {destino} • {fecha}
-        </Text>
+      <View style={styles.welcomeContainer}>
+        <Text style={styles.welcomeText}>¡Hola, {user.nombre_completo.split(' ')[0]}!</Text>
+        <Text style={styles.subWelcome}>¿A dónde viajas hoy?</Text>
       </View>
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Buscando viajes disponibles...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={viajes}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderTripCard}
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={
+      <View style={styles.quickNav}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.navigate('SearchTrip')}
+        >
+          <View style={[styles.iconBg, { backgroundColor: '#DBEAFE' }]}>
+            <Ionicons name="search" size={24} color="#1D4ED8" />
+          </View>
+          <Text style={styles.navLabel}>Buscar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.navigate('MyRequests')}
+        >
+          <View style={[styles.iconBg, { backgroundColor: '#FEF3C7' }]}>
+            <Ionicons name="receipt-outline" size={24} color="#D97706" />
+          </View>
+          <Text style={styles.navLabel}>Mis Solicitudes</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => navigation.navigate('DriverRegistration')}
+        >
+          <View style={[styles.iconBg, { backgroundColor: '#D1FAE5' }]}>
+            <Ionicons name="car-outline" size={24} color="#059669" />
+          </View>
+          <Text style={styles.navLabel}>Ser Conductor</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Viajes Disponibles</Text>
+        <TouchableOpacity onPress={fetchAvailableTrips}>
+          <Ionicons name="refresh" size={18} color={COLORS.primary} />
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={viajes}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={renderTripCard}
+        contentContainerStyle={styles.listContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
+        }
+        ListEmptyComponent={
+          !loading && (
             <EmptyState
-              icon="search-outline"
-              title="No se encontraron viajes"
-              description="No hay conductores ofreciendo viajes a este destino en la fecha seleccionada."
+              icon="car-sport-outline"
+              title="No hay viajes programados"
+              description="Vuelve más tarde o utiliza la búsqueda para encontrar rutas disponibles."
             />
-          }
-        />
-      )}
+          )
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -137,37 +177,63 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  searchSummary: {
-    backgroundColor: COLORS.surface,
+  profileBtn: {
+    padding: 4,
+  },
+  welcomeContainer: {
     paddingHorizontal: SIZES.padding,
-    paddingVertical: 12,
+    marginVertical: 12,
+  },
+  welcomeText: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  subWelcome: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+  },
+  quickNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderColor: COLORS.border,
+    marginBottom: 8,
   },
-  summaryTitle: {
+  navItem: {
+    alignItems: 'center',
+  },
+  iconBg: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  navLabel: {
     fontSize: 12,
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    fontWeight: 'bold',
+    fontWeight: '600',
+    color: COLORS.text,
   },
-  summaryDetails: {
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SIZES.padding,
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginTop: 2,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: COLORS.textSecondary,
   },
   listContainer: {
     padding: SIZES.padding,
+    paddingTop: 4,
   },
   card: {
     padding: 16,

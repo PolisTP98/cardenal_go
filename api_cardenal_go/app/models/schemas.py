@@ -259,6 +259,15 @@ class UsuarioResponse(BaseModel):
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)
 
+# PERFIL BASICO PARA REFERENCIAS EN CHATS Y RELACIONES SOCIALES
+class UsuarioBasicoResponse(BaseModel):
+    id: int
+    nombre_completo: str
+    url_foto_perfil: str
+    calificacion_pasajero: Decimal
+    calificacion_conductor: Decimal
+    model_config = ConfigDict(from_attributes = True)
+
 # ROLES Y ESTATUS DE LOS USUARIOS
 class RolUsuarioCreate(BaseModel):
     id_usuario: int
@@ -309,6 +318,7 @@ class ConductorResponse(BaseModel):
     nombre_titular_cuenta: Optional[str]
     id_cuenta_pasarela: Optional[str]
     fecha_hora_registro: datetime
+    usuario: Optional[UsuarioResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
 # INFORMACIÓN DE LOS VEHÍCULOS DE LOS CONDUCTORES
@@ -334,6 +344,7 @@ class VehiculoResponse(BaseModel):
     anio: int
     fotos: List[str]
     fecha_hora_registro: datetime
+    conductor: Optional[ConductorResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
 # INFORMACIÓN NO SENSIBLE DE LAS TARJETAS DE LOS PASAJEROS
@@ -366,9 +377,12 @@ class TarjetaPasajeroResponse(BaseModel):
 # PUBLICACIÓN DE VIAJES DE LOS CONDUCTORES
 class ViajeCreate(BaseModel):
     id_vehiculo: int
-    id_estatus: int
+    id_estatus: int = 1
     ubicacion_inicio: GeoPoint
     ubicacion_destino: GeoPoint
+    nombre_origen: Optional[str] = Field(None, max_length = 255, description = "Nombre legible del punto de origen")
+    nombre_destino: Optional[str] = Field(None, max_length = 255, description = "Nombre legible del destino")
+    precio_sugerido: Optional[Decimal] = Field(None, ge = Decimal("0.00"), decimal_places = 2, description = "Aportación sugerida por el conductor")
     ruta_sugerida: Optional[Dict[str, Any]] = None
     fecha: date
     hora_inicio: time
@@ -385,6 +399,9 @@ class ViajeUpdate(BaseModel):
     ruta_sugerida: Optional[Dict[str, Any]] = None
     hora_inicio: Optional[time] = None
     asientos_disponibles: Optional[int] = Field(None, ge = 0)
+    nombre_origen: Optional[str] = Field(None, max_length = 255)
+    nombre_destino: Optional[str] = Field(None, max_length = 255)
+    precio_sugerido: Optional[Decimal] = Field(None, ge = Decimal("0.00"), decimal_places = 2)
     model_config = ConfigDict(extra = "forbid")
 
 class ViajeResponse(BaseModel):
@@ -393,6 +410,9 @@ class ViajeResponse(BaseModel):
     id_estatus: int
     ubicacion_inicio: GeoPoint
     ubicacion_destino: GeoPoint
+    nombre_origen: Optional[str] = None
+    nombre_destino: Optional[str] = None
+    precio_sugerido: Optional[Decimal] = None
     ruta_sugerida: Optional[Dict[str, Any]]
     fecha: date
     hora_inicio: time
@@ -565,6 +585,32 @@ class MensajeChatResponse(BaseModel):
     contenido: str
     leido: bool
     fecha_hora_registro: datetime
+    emisor: Optional[UsuarioBasicoResponse] = None
+    model_config = ConfigDict(from_attributes = True)
+
+# RESPUESTA DE BANDEJA DE ENTRADA (LISTA DE CHATS CON ULTIMO MENSAJE)
+class UltimoMensajeResumen(BaseModel):
+    id: int
+    id_chat: int
+    id_emisor: int
+    id_receptor: int
+    contenido: str
+    leido: bool
+    fecha_hora_registro: datetime
+
+class OtroUsuarioResumen(BaseModel):
+    id: int
+    nombre_completo: str
+    url_foto_perfil: str
+
+class ChatBandejaResponse(BaseModel):
+    id: int
+    id_tipo_chat: int
+    id_viaje: Optional[int] = None
+    fecha_hora_registro: datetime
+    mensajes_no_leidos: int = 0
+    ultimo_mensaje: Optional[UltimoMensajeResumen] = None
+    otro_usuario: Optional[OtroUsuarioResumen] = None
     model_config = ConfigDict(from_attributes = True)
 
 

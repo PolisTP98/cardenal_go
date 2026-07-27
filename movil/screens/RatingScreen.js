@@ -11,7 +11,7 @@ export default function RatingScreen({ navigation }) {
 
     return (
         <View style={styles.container}>
-        <TopHeader title="Cardenal GO" showBack onBackPress={() => navigation.navigate('Home')} />
+        <TopHeader title="Cardenal GO" showBack onBackPress={() => navigation.navigate('PassengerDashboard')} />
         <ScrollView contentContainerStyle={styles.content}>
             <Text style={styles.title}>¿Cómo estuvo tu viaje?</Text>
             <Text style={styles.subtitle}>Toyota Yaris Blanco • UPQ-2023</Text>
@@ -51,7 +51,7 @@ export default function RatingScreen({ navigation }) {
 
             <PrimaryButton 
             title="Enviar calificación" 
-            onPress={() => navigation.navigate('Home')} 
+            onPress={() => navigation.navigate('PassengerDashboard')} 
             style={styles.submitBtn} 
             />
             

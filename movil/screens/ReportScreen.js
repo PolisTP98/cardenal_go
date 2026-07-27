@@ -62,7 +62,7 @@ export default function ReportScreen({ navigation }) {
             </TouchableOpacity>
             <PrimaryButton 
                 title="Enviar reporte" 
-                onPress={() => navigation.navigate('Home')} 
+                onPress={() => navigation.navigate('PassengerDashboard')} 
                 style={styles.submitBtn} 
             />
             </View>
