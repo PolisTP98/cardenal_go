@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
@@ -156,86 +156,92 @@ export default function PublishTripScreen({ navigation }) {
       <TopHeader title="Publicar Viaje" showBack onBackPress={() => navigation.goBack()} />
       <LoadingOverlay visible={submitting} message="Publicando viaje..." />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Crea una nueva ruta</Text>
-        <Text style={styles.subtitle}>Comparte los gastos de tu trayecto y ayuda a tus compañeros.</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>Crea una nueva ruta</Text>
+          <Text style={styles.subtitle}>Comparte los gastos de tu trayecto y ayuda a tus compañeros.</Text>
 
-        {vehicle && (
-          <Card style={styles.vehicleCard}>
-            <View style={styles.vehicleRow}>
-              <Ionicons name="car-sport" size={24} color={COLORS.primary} />
-              <View style={styles.vehicleInfo}>
-                <Text style={styles.vehicleTitle}>{vehicle.modelo} ({vehicle.color})</Text>
-                <Text style={styles.vehiclePlate}>Placa: {vehicle.placa}</Text>
+          {vehicle && (
+            <Card style={styles.vehicleCard}>
+              <View style={styles.vehicleRow}>
+                <Ionicons name="car-sport" size={24} color={COLORS.primary} />
+                <View style={styles.vehicleInfo}>
+                  <Text style={styles.vehicleTitle}>{vehicle.modelo} ({vehicle.color})</Text>
+                  <Text style={styles.vehiclePlate}>Placa: {vehicle.placa}</Text>
+                </View>
+              </View>
+            </Card>
+          )}
+
+          <Card style={{ zIndex: 20 }}>
+            <Text style={styles.sectionTitle}>Ruta del Viaje</Text>
+            <LocationSearchInput
+              label="Origen"
+              placeholder="Ej. UPQ o tu dirección de salida"
+              value={origen}
+              onChangeText={setOrigen}
+              iconName="navigate-circle-outline"
+              iconColor="green"
+              style={{ zIndex: 20 }}
+              onSelectLocation={(loc) => {
+                setOrigen(loc.address || loc.name);
+                setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
+              }}
+            />
+            <LocationSearchInput
+              label="Destino"
+              placeholder="¿A dónde vas?"
+              value={destino}
+              onChangeText={setDestino}
+              iconName="location-sharp"
+              iconColor="red"
+              style={{ zIndex: 10 }}
+              onSelectLocation={(loc) => {
+                setDestino(loc.address || loc.name);
+                setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
+              }}
+            />
+
+            <View style={styles.selectorModeRow}>
+              <Text style={styles.selectorLabel}>Toca el mapa para definir:</Text>
+              <View style={styles.selectorBtns}>
+                <TouchableOpacity
+                  style={[styles.modeBtn, selectingTarget === 'origen' && styles.modeBtnActive]}
+                  onPress={() => setSelectingTarget('origen')}
+                >
+                  <Text style={[styles.modeBtnText, selectingTarget === 'origen' && styles.modeBtnTextActive]}>🟢 Origen</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modeBtn, selectingTarget === 'destino' && styles.modeBtnActive]}
+                  onPress={() => setSelectingTarget('destino')}
+                >
+                  <Text style={[styles.modeBtnText, selectingTarget === 'destino' && styles.modeBtnTextActive]}>🔴 Destino</Text>
+                </TouchableOpacity>
               </View>
             </View>
+
+            <MapaRutas
+              interactive={true}
+              height={220}
+              waypoints={waypoints}
+              onMapPress={(loc) => {
+                if (selectingTarget === 'origen') {
+                  setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                  if (loc.address) {
+                    setOrigen(loc.address);
+                  }
+                } else {
+                  setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                  if (loc.address) {
+                    setDestino(loc.address);
+                  }
+                }
+              }}
+            />
           </Card>
-        )}
-
-        <Card style={{ zIndex: 20 }}>
-          <Text style={styles.sectionTitle}>Ruta del Viaje</Text>
-          <LocationSearchInput
-            label="Origen"
-            placeholder="Ej. UPQ o tu dirección de salida"
-            value={origen}
-            onChangeText={setOrigen}
-            iconName="navigate-circle-outline"
-            iconColor="green"
-            onSelectLocation={(loc) => {
-              setOrigen(loc.address || loc.name);
-              setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
-            }}
-          />
-          <LocationSearchInput
-            label="Destino"
-            placeholder="¿A dónde vas?"
-            value={destino}
-            onChangeText={setDestino}
-            iconName="location-sharp"
-            iconColor="red"
-            onSelectLocation={(loc) => {
-              setDestino(loc.address || loc.name);
-              setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
-            }}
-          />
-
-          <View style={styles.selectorModeRow}>
-            <Text style={styles.selectorLabel}>Toca el mapa para definir:</Text>
-            <View style={styles.selectorBtns}>
-              <TouchableOpacity
-                style={[styles.modeBtn, selectingTarget === 'origen' && styles.modeBtnActive]}
-                onPress={() => setSelectingTarget('origen')}
-              >
-                <Text style={[styles.modeBtnText, selectingTarget === 'origen' && styles.modeBtnTextActive]}>🟢 Origen</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modeBtn, selectingTarget === 'destino' && styles.modeBtnActive]}
-                onPress={() => setSelectingTarget('destino')}
-              >
-                <Text style={[styles.modeBtnText, selectingTarget === 'destino' && styles.modeBtnTextActive]}>🔴 Destino</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <MapaRutas
-            interactive={true}
-            height={220}
-            waypoints={waypoints}
-            onMapPress={(loc) => {
-              if (selectingTarget === 'origen') {
-                setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
-                if (loc.address) {
-                  setOrigen(loc.address);
-                }
-              } else {
-                setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
-                if (loc.address) {
-                  setDestino(loc.address);
-                }
-              }
-            }}
-          />
-        </Card>
 
         <Card>
           <Text style={styles.sectionTitle}>Agenda y Capacidad</Text>
@@ -286,6 +292,7 @@ export default function PublishTripScreen({ navigation }) {
           style={styles.publishBtn}
         />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

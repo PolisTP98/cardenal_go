@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
@@ -226,19 +226,23 @@ export default function TripDetailScreen({ route, navigation }) {
       <TopHeader title="Detalle del Viaje" showBack onBackPress={() => navigation.navigate(isDriver ? 'DriverDashboard' : 'PassengerDashboard')} />
       <LoadingOverlay visible={actionLoading} message="Procesando acción..." />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Card style={styles.detailCard}>
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={styles.dateTime}>
-                {viaje.fecha} a las {viaje.hora_inicio.substring(0, 5)}
-              </Text>
-              <Text style={styles.price}>
-                Tarifa: ${viaje.precio_sugerido ? parseFloat(viaje.precio_sugerido).toFixed(2) : '0.00'}
-              </Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <Card style={styles.detailCard}>
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.dateTime}>
+                  {viaje.fecha} a las {viaje.hora_inicio.substring(0, 5)}
+                </Text>
+                <Text style={styles.price}>
+                  Tarifa: ${viaje.precio_sugerido ? parseFloat(viaje.precio_sugerido).toFixed(2) : '0.00'}
+                </Text>
+              </View>
+              <StatusBadge statusId={viaje.id_estatus} type="viaje" />
             </View>
-            <StatusBadge statusId={viaje.id_estatus} type="viaje" />
-          </View>
 
           <View style={styles.divider} />
 
@@ -518,6 +522,7 @@ export default function TripDetailScreen({ route, navigation }) {
           </View>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

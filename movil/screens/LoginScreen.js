@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SIZES } from '../components/Theme';
 import CustomInput from '../components/CustomInput';
@@ -48,7 +48,11 @@ export default function LoginScreen({ navigation }) {
           <LoadingOverlay visible={loading} message="Iniciando sesión..." />
 
           <View style={styles.header}>
-            <Text style={styles.logo}>CARDENAL GO</Text>
+            <Image
+              source={require('../assets/Logo_cardenal.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.description}>Movilidad segura y oficial para la comunidad de la UPQ</Text>
           </View>
 
@@ -103,14 +107,12 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 30,
   },
-  logo: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    marginBottom: 8,
-    letterSpacing: 1,
+  logoImage: {
+    width: 160,
+    height: 160,
+    marginBottom: 12,
   },
   description: {
     fontSize: 14,

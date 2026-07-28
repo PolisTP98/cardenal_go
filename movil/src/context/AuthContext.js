@@ -86,12 +86,39 @@ export function AuthProvider({ children }) {
     Alert.alert('Sesión Cerrada', 'Has cerrado tu sesión.');
   };
 
-  const updateRole = async (newRole) => {
-    if (user) {
-      const updatedUser = { ...user, role: newRole };
-      console.log('[AuthContext] Actualizando rol en almacenamiento a:', newRole);
-      await setItem('cgo_user', JSON.stringify(updatedUser));
-      setUser(updatedUser);
+  const updateRole = async (newRole, navigationCallback) => {
+    if (!user) return;
+
+    try {
+      console.log('[AuthContext] Solicitando actualización de rol/token en backend a:', newRole);
+      const apiClient = (await import('../api/apiClient')).default;
+      const res = await apiClient.post('/api/usu/cambiar-rol', { nuevo_rol: newRole });
+
+      if (res.data && res.data.access_token) {
+        const newToken = res.data.access_token;
+        // 1. Guardar nuevo token PRIMERO (el interceptor de apiClient lo leerá en la siguiente petición)
+        await setItem('cgo_token', newToken);
+        setToken(newToken);
+        console.log('[AuthContext] Nuevo token JWT con rol', newRole, 'guardado correctamente.');
+      } else {
+        throw new Error('El servidor no devolvió un token válido.');
+      }
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || 'Error al cambiar de rol.';
+      console.error('[AuthContext] Error al cambiar de rol:', msg);
+      Alert.alert('Error de Rol', `No se pudo cambiar al rol "${newRole}".\n\n${msg}`);
+      return; // Abortar — no actualizar estado ni navegar con token incorrecto
+    }
+
+    // 2. Actualizar objeto de usuario local DESPUÉS de que el token es correcto
+    const updatedUser = { ...user, role: newRole };
+    console.log('[AuthContext] Actualizando rol en almacenamiento a:', newRole);
+    await setItem('cgo_user', JSON.stringify(updatedUser));
+    setUser(updatedUser);
+
+    // 3. Ejecutar callback de navegación
+    if (navigationCallback) {
+      navigationCallback(newRole);
     }
   };
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import CustomInput from '../components/CustomInput';
@@ -9,25 +9,30 @@ export default function ForgotPasswordScreen({ navigation }) {
     return (
         <View style={styles.container}>
         <TopHeader showBack onBackPress={() => navigation.goBack()} />
-        <View style={styles.content}>
-            <Text style={styles.title}>Recuperar contraseña</Text>
-            <Text style={styles.description}>
-            Ingresa tu matrícula para recibir un código de verificación en tu correo institucional.
-            </Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+              <Text style={styles.title}>Recuperar contraseña</Text>
+              <Text style={styles.description}>
+              Ingresa tu matrícula para recibir un código de verificación en tu correo institucional.
+              </Text>
 
-            <CustomInput 
-            label="Matrícula" 
-            placeholder="Ej. 120034567" 
-            keyboardType="numeric"
-            />
-            <Text style={styles.helperText}>Debe contener 9 dígitos numéricos.</Text>
+              <CustomInput 
+              label="Matrícula" 
+              placeholder="Ej. 120034567" 
+              keyboardType="numeric"
+              />
+              <Text style={styles.helperText}>Debe contener 9 dígitos numéricos.</Text>
 
-            <PrimaryButton 
-            title="Enviar código" 
-            onPress={() => navigation.navigate('VerifyCode')} 
-            style={styles.button}
-            />
-        </View>
+              <PrimaryButton 
+              title="Enviar código" 
+              onPress={() => navigation.navigate('VerifyCode')} 
+              style={styles.button}
+              />
+          </ScrollView>
+        </KeyboardAvoidingView>
         </View>
     );
 }

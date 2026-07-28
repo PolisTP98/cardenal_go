@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
@@ -72,14 +72,20 @@ export default function DriverRegistrationScreen({ navigation }) {
       };
       await registrarVehiculo(vehiculoData);
 
-      // 3. Actualizar Rol en Contexto y Guardar
-      await updateRole('Conductor');
-
-      Alert.alert('¡Felicidades!', 'Te has registrado exitosamente como conductor. Bienvenido.', [
-        { text: 'Comenzar', onPress: () => {
-          // El cambio de rol redirige automáticamente al DriverStack
-        }}
-      ]);
+      // 3. Actualizar Rol en Contexto y Guardar, luego navegar al DriverDashboard
+      await updateRole('Conductor', () => {
+        Alert.alert('¡Felicidades!', 'Te has registrado exitosamente como conductor. Bienvenido.', [
+          {
+            text: 'Comenzar',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'DriverDashboard' }],
+              });
+            }
+          }
+        ]);
+      });
     } catch (error) {
       Alert.alert('Error de registro', error.displayMessage || 'Ocurrió un error al registrar tus datos de conductor.');
     } finally {
@@ -89,78 +95,95 @@ export default function DriverRegistrationScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TopHeader title="Registro Conductor" showBack onBackPress={() => step === 2 ? setStep(1) : navigation.goBack()} />
+      <TopHeader 
+        title="Registro de Conductor" 
+        showBack 
+        onBackPress={() => {
+          if (step === 2) {
+            setStep(1);
+          } else if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate('PassengerDashboard');
+          }
+        }} 
+      />
       <LoadingOverlay visible={loading} message="Registrando conductor y vehículo..." />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Ofrece viajes compartidos</Text>
-        <Text style={styles.subtitle}>Completa tu perfil de conductor para empezar a publicar rutas en la UPQ.</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>Ofrece viajes compartidos</Text>
+          <Text style={styles.subtitle}>Completa tu perfil de conductor para empezar a publicar rutas en la UPQ.</Text>
 
-        <View style={styles.stepsIndicator}>
-          <View style={[styles.stepItem, step === 1 && styles.stepActive]}>
-            <Text style={[styles.stepText, step === 1 && styles.stepTextActive]}>1. Personal</Text>
-          </View>
-          <View style={[styles.stepItem, step === 2 && styles.stepActive]}>
-            <Text style={[styles.stepText, step === 2 && styles.stepTextActive]}>2. Vehículo</Text>
-          </View>
-        </View>
-
-        {step === 1 ? (
-          <Card>
-            <Text style={styles.sectionTitle}>Información del Conductor</Text>
-            <CustomInput
-              label="Número de Teléfono"
-              placeholder="Ej. 4421234567"
-              keyboardType="phone-pad"
-              value={phone}
-              onChangeText={setPhone}
-            />
-            <CustomInput
-              label="Número de Licencia de Conducir"
-              placeholder="Ej. LIC-44829A"
-              value={license}
-              onChangeText={setLicense}
-            />
-            <PrimaryButton title="Continuar" onPress={nextStep} style={styles.btn} />
-          </Card>
-        ) : (
-          <Card>
-            <Text style={styles.sectionTitle}>Detalles del Vehículo</Text>
-            <CustomInput
-              label="Placa de Circulación"
-              placeholder="Ej. UKP-123-A"
-              value={plate}
-              onChangeText={setPlate}
-            />
-            <CustomInput
-              label="Modelo / Marca"
-              placeholder="Ej. Chevrolet Aveo"
-              value={model}
-              onChangeText={setModel}
-            />
-            <View style={styles.row}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <CustomInput
-                  label="Color"
-                  placeholder="Ej. Plata"
-                  value={color}
-                  onChangeText={setColor}
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <CustomInput
-                  label="Año"
-                  placeholder="Ej. 2018"
-                  keyboardType="numeric"
-                  value={year}
-                  onChangeText={setYear}
-                />
-              </View>
+          <View style={styles.stepsIndicator}>
+            <View style={[styles.stepItem, step === 1 && styles.stepActive]}>
+              <Text style={[styles.stepText, step === 1 && styles.stepTextActive]}>1. Personal</Text>
             </View>
-            <PrimaryButton title="Finalizar Registro" onPress={handleRegistration} style={styles.btn} />
-          </Card>
-        )}
-      </ScrollView>
+            <View style={[styles.stepItem, step === 2 && styles.stepActive]}>
+              <Text style={[styles.stepText, step === 2 && styles.stepTextActive]}>2. Vehículo</Text>
+            </View>
+          </View>
+
+          {step === 1 ? (
+            <Card>
+              <Text style={styles.sectionTitle}>Información del Conductor</Text>
+              <CustomInput
+                label="Número de Teléfono"
+                placeholder="Ej. 4421234567"
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+              />
+              <CustomInput
+                label="Número de Licencia de Conducir"
+                placeholder="Ej. LIC-44829A"
+                value={license}
+                onChangeText={setLicense}
+              />
+              <PrimaryButton title="Continuar" onPress={nextStep} style={styles.btn} />
+            </Card>
+          ) : (
+            <Card>
+              <Text style={styles.sectionTitle}>Detalles del Vehículo</Text>
+              <CustomInput
+                label="Placa del Vehículo"
+                placeholder="Ej. UKP-12-34"
+                value={plate}
+                onChangeText={setPlate}
+              />
+              <CustomInput
+                label="Color"
+                placeholder="Ej. Rojo"
+                value={color}
+                onChangeText={setColor}
+              />
+              <View style={styles.row}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <CustomInput
+                    label="Modelo / Marca"
+                    placeholder="Ej. Nissan Versa"
+                    value={model}
+                    onChangeText={setModel}
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <CustomInput
+                    label="Año"
+                    placeholder="Ej. 2020"
+                    keyboardType="numeric"
+                    value={year}
+                    onChangeText={setYear}
+                  />
+                </View>
+              </View>
+              <PrimaryButton title="Finalizar Registro" onPress={handleRegistration} style={styles.btn} />
+            </Card>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

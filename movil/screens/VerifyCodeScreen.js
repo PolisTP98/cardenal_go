@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import CustomInput from '../components/CustomInput';
@@ -9,33 +9,38 @@ export default function VerifyCodeScreen({ navigation }) {
     return (
         <View style={styles.container}>
         <TopHeader title="Cardenal GO" showBack onBackPress={() => navigation.goBack()} />
-        <View style={styles.content}>
-            <Text style={styles.title}>Verificar código</Text>
-            <Text style={styles.description}>
-            Hemos enviado un código de 6 dígitos a tu correo electrónico
-            </Text>
-            <Text style={styles.emailText}>...@upq.edu.mx</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+              <Text style={styles.title}>Verificar código</Text>
+              <Text style={styles.description}>
+              Hemos enviado un código de 6 dígitos a tu correo electrónico
+              </Text>
+              <Text style={styles.emailText}>...@upq.edu.mx</Text>
 
-            <CustomInput 
-            placeholder="------" 
-            keyboardType="numeric"
-            style={styles.codeInput}
-            />
+              <CustomInput 
+              placeholder="------" 
+              keyboardType="numeric"
+              style={styles.codeInput}
+              />
 
-            <PrimaryButton 
-            title="Verificar" 
-            onPress={() => navigation.navigate('NewPassword')} 
-            style={styles.button}
-            />
+              <PrimaryButton 
+              title="Verificar" 
+              onPress={() => navigation.navigate('NewPassword')} 
+              style={styles.button}
+              />
 
-            <View style={styles.resendContainer}>
-            <Text style={styles.resendPrompt}>¿No lo recibiste? </Text>
-            <TouchableOpacity>
-                <Text style={styles.resendLink}>Reenviar código</Text>
-            </TouchableOpacity>
-            </View>
-            <Text style={styles.spamNotice}>Revisa tu carpeta de spam.</Text>
-        </View>
+              <View style={styles.resendContainer}>
+              <Text style={styles.resendPrompt}>¿No lo recibiste? </Text>
+              <TouchableOpacity>
+                  <Text style={styles.resendLink}>Reenviar código</Text>
+              </TouchableOpacity>
+              </View>
+              <Text style={styles.spamNotice}>Revisa tu carpeta de spam.</Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
         </View>
     );
 }

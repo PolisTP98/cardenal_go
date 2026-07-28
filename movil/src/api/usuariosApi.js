@@ -18,9 +18,11 @@ export const updateUsuario = async (id, datos) => {
   return r.data;
 };
 
-// GET /api/usu/conductores/:usuarioId
+// GET /api/usu/conductores/usuario/:usuarioId  ← endpoint explícito por id_usuario
 export const getConductorByUsuario = async (usuarioId) => {
-  const r = await apiClient.get(`/api/usu/conductores/${usuarioId}`);
+  // Usamos la ruta /usuario/{id} que busca exclusivamente por id_usuario,
+  // NO la ruta genérica /{id} que primero busca por conductor.id (podría devolver el conductor incorrecto)
+  const r = await apiClient.get(`/api/usu/conductores/usuario/${usuarioId}`);
   return r.data;
 };
 

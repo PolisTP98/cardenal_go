@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
@@ -34,30 +34,36 @@ export default function SearchTripScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <TopHeader title="Buscar Viaje" showBack onBackPress={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>¿A dónde vas hoy?</Text>
-        <Text style={styles.subtitle}>Encuentra conductores que se dirigen a tu mismo destino.</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>¿A dónde vas hoy?</Text>
+          <Text style={styles.subtitle}>Encuentra conductores que se dirigen a tu mismo destino.</Text>
 
-        <Card style={styles.searchCard}>
-          <LocationSearchInput
-            label="Punto de Origen"
-            placeholder="Ej. UPQ o dirección de salida"
-            value={origen}
-            onChangeText={setOrigen}
-            iconName="navigate-circle-outline"
-            iconColor="green"
-            onSelectLocation={(loc) => setOrigen(loc.address || loc.name)}
-          />
+          <Card style={styles.searchCard}>
+            <LocationSearchInput
+              label="Punto de Origen"
+              placeholder="Ej. UPQ o dirección de salida"
+              value={origen}
+              onChangeText={setOrigen}
+              iconName="navigate-circle-outline"
+              iconColor="green"
+              style={{ zIndex: 20 }}
+              onSelectLocation={(loc) => setOrigen(loc.address || loc.name)}
+            />
 
-          <LocationSearchInput
-            label="Destino Principal"
-            placeholder="¿A qué colonia o lugar vas?"
-            value={destino}
-            onChangeText={setDestino}
-            iconName="location-sharp"
-            iconColor="red"
-            onSelectLocation={(loc) => setDestino(loc.address || loc.name)}
-          />
+            <LocationSearchInput
+              label="Destino Principal"
+              placeholder="¿A qué colonia o lugar vas?"
+              value={destino}
+              onChangeText={setDestino}
+              iconName="location-sharp"
+              iconColor="red"
+              style={{ zIndex: 10 }}
+              onSelectLocation={(loc) => setDestino(loc.address || loc.name)}
+            />
 
           <CustomInput
             label="Fecha del Viaje (YYYY-MM-DD)"
@@ -73,6 +79,7 @@ export default function SearchTripScreen({ navigation }) {
           />
         </Card>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

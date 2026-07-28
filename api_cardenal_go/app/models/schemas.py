@@ -335,11 +335,11 @@ class VehiculoCreate(BaseModel):
     color: str = Field(..., max_length = 30)
     modelo: str = Field(..., max_length = 50)
     anio: int
-    fotos: Dict[str, Any] = Field(..., min_length = 1)
+    fotos: Any = Field(...)
 
 class VehiculoUpdate(BaseModel):
     color: Optional[str] = Field(None, max_length = 30)
-    fotos: Optional[Dict[str, Any]] = None
+    fotos: Optional[Any] = None
     model_config = ConfigDict(extra = "forbid")
 
 class VehiculoResponse(BaseModel):
@@ -349,7 +349,7 @@ class VehiculoResponse(BaseModel):
     color: str
     modelo: str
     anio: int
-    fotos: Dict[str, Any]
+    fotos: Any
     fecha_hora_registro: datetime
     conductor: Optional[ConductorResponse] = None
     model_config = ConfigDict(from_attributes = True)

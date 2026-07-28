@@ -67,7 +67,7 @@ export default function LocationSearchInput({
   };
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, style, { zIndex: showDropdown ? 9999 : (style && style.zIndex ? style.zIndex : 10) }]}>
       {label && <Text style={styles.label}>{label}</Text>}
 
       <View style={styles.inputWrapper}>

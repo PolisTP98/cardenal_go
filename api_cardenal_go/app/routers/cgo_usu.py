@@ -50,6 +50,33 @@ def iniciarSesion(form_data: OAuth2PasswordRequestForm = Depends(), db: Session 
         "nombre_completo": usuario.nombre_completo
     }
 
+@router.post("/cambiar-rol", summary = "Intercambiar rol activo y generar nuevo token")
+def cambiarRol(datos: dict, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    nuevo_rol = datos.get("nuevo_rol")
+    ROLES_VALIDOS = ["Pasajero", "Conductor", "Administrador", "Superadministrador"]
+    if nuevo_rol not in ROLES_VALIDOS:
+        raise HTTPException(status_code = 400, detail = f"Rol no válido. Opciones: {ROLES_VALIDOS}")
+    user_id = payload.get("sub")
+    usuario = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+    
+    # Si es Conductor, verificar que el usuario tenga perfil de conductor registrado
+    if nuevo_rol == "Conductor":
+        conductor = db.query(Conductor).filter(Conductor.id_usuario == usuario.id).first()
+        if not conductor:
+            raise HTTPException(status_code = 403, detail = "No tienes un perfil de conductor registrado. Registra tu perfil de conductor primero.")
+
+    # Emitir nuevo token con el rol actualizado
+    token = createAccessToken(data = {"sub": str(usuario.id), "role": nuevo_rol})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": nuevo_rol,
+        "usuario_id": usuario.id,
+        "nombre_completo": usuario.nombre_completo
+    }
+
 
 # --------------------------------
 # | OPERACIONES CRUD DE USUARIOS |
@@ -109,44 +136,6 @@ def buscarUsuarios(
 # | ENDPOINTS DE ELIMINACIÓN Y REACTIVACIÓN LÓGICA DE USUARIOS |
 # --------------------------------------------------------------
 
-@router.post("/", response_model = schemas.UsuarioResponse, status_code = status.HTTP_201_CREATED, summary = "Crear usuario")
-def crearUsuario(usuario_in: schemas.UsuarioCreate, db: Session = Depends(getDB)):
-    nuevo_usuario = Usuario(
-        nombre_completo = usuario_in.nombre_completo, 
-        matricula = usuario_in.matricula, 
-        correo_institucional = usuario_in.correo_institucional, 
-        contrasena_hash = hashPassword(usuario_in.contrasena_raw),
-        url_foto_perfil = usuario_in.url_foto_perfil
-    )
-    db.add(nuevo_usuario)
-    db.commit()
-    db.refresh(nuevo_usuario)
-    return nuevo_usuario
-
-@router.get("/", response_model = List[schemas.UsuarioResponse], summary = "Obtener todos los usuarios")
-def obtenerUsuarios(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    usuarios = db.query(Usuario).offset(skip).limit(limit).all()
-    return usuarios
-
-@router.get("/buscar", response_model = List[schemas.UsuarioResponse], summary = "Buscar usuario(s) con filtros dinámicos")
-def buscarUsuarios(
-    nombre: Optional[str] = Query(None, description = "Filtrar por nombre completo (coincidencia parcial)"), 
-    matricula: Optional[str] = Query(None, description = "Filtrar por matrícula (coincidencia parcial)"), 
-    correo: Optional[str] = Query(None, description = "Filtrar por correo institucional (coincidencia parcial)"), 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(verifyToken)
-):
-    query = db.query(Usuario)
-    if nombre:
-        query = query.filter(Usuario.nombre_completo.ilike(f"%{nombre}%"))
-    if matricula:
-        query = query.filter(Usuario.matricula.ilike(f"%{matricula}%"))
-    if correo:
-        query = query.filter(Usuario.correo_institucional.ilike(f"%{correo}%"))
-    return query.offset(skip).limit(limit).all()
-
 @router.patch("/usuarios/{usuario_id}/eliminacion-logica", summary = "Eliminar usuario de manera lógica")
 def eliminarUsuarioLogica(
     usuario_id: int, 
@@ -173,6 +162,16 @@ def reactivarUsuario(
     db.commit()
     return {"status": "ok", "message": f"Usuario {usuario_id} reactivado con éxito"}
 
+@router.get("/me", response_model = schemas.UsuarioResponse, summary = "Obtener perfil del usuario autenticado")
+def obtenerPerfilUsuarioActual(db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code = status.HTTP_401_UNAUTHORIZED, detail = "Token inválido")
+    usuario = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
+    if not usuario:
+        raise HTTPException(status_code = status.HTTP_404_NOT_FOUND, detail = "Usuario no encontrado")
+    return usuario
+
 @router.get("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Obtener usuario por ID")
 def obtenerUsuarioPorId(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
@@ -190,10 +189,16 @@ def actualizarUsuario(
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(usuario.id), is_admin)
     datos = usuario_in.model_dump(exclude_unset = True)
+    if "url_foto_perfil" in datos:
+        if datos["url_foto_perfil"] is None or str(datos["url_foto_perfil"]).strip() == "":
+            datos.pop("url_foto_perfil")
     if "contrasena_raw" in datos:
-        from security.auth import hashPassword
-        usuario.contrasena_hash = hashPassword(datos.pop("contrasena_raw"))
+        raw_pass = datos.pop("contrasena_raw")
+        if raw_pass and raw_pass.strip():
+            usuario.contrasena_hash = hashPassword(raw_pass)
     for key, value in datos.items():
         setattr(usuario, key, value)
     db.commit()
@@ -202,31 +207,10 @@ def actualizarUsuario(
 
 @router.delete("/{usuario_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar usuario por ID")
 def eliminarUsuario(
-    usuario_id: int,
-    db: Session = Depends(getDB),
+    usuario_id: int, 
+    db: Session = Depends(getDB), 
     payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
 ):
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(usuario.id), is_admin)
-    update_data = usuario_in.model_dump(exclude_unset = True)
-    if "url_foto_perfil" in update_data:
-        if update_data["url_foto_perfil"] is None or str(update_data["url_foto_perfil"]).strip() == "":
-            update_data.pop("url_foto_perfil")
-    if "contrasena_raw" in update_data:
-        raw_pass = update_data.pop("contrasena_raw")
-        if raw_pass and raw_pass.strip():
-            usuario.contrasena_hash = hashPassword(raw_pass)
-    for key, value in update_data.items():
-        setattr(usuario, key, value)
-    db.commit()
-    db.refresh(usuario)
-    return usuario
-
-@router.delete("/{usuario_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar usuario por ID")
-def eliminarUsuario(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
@@ -246,7 +230,15 @@ def registrarConductor(
 ):
     existe = db.query(Conductor).filter(Conductor.id_usuario == conductor_in.id_usuario).first()
     if existe:
-        raise HTTPException(status_code = 409, detail = "El usuario ya tiene perfil de conductor")
+        # Si ya existe perfil de conductor, actualizar sus datos en lugar de fallar con 409
+        for key, value in conductor_in.model_dump(exclude_unset = True).items():
+            setattr(existe, key, value)
+        rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == conductor_in.id_usuario).first()
+        if rol_usuario:
+            rol_usuario.id_rol = 2
+        db.commit()
+        db.refresh(existe)
+        return existe
     nuevo_conductor = Conductor(**conductor_in.model_dump())
     db.add(nuevo_conductor)
     db.flush()
@@ -278,6 +270,22 @@ def buscarConductores(
         query = query.filter(Conductor.licencia_conducir.ilike(f"%{numero_licencia}%"))
     return query.offset(skip).limit(limit).all()
 
+@router.get("/conductores/usuario/{usuario_id}", response_model = schemas.ConductorResponse, summary = "Obtener conductor por ID de usuario")
+def obtenerConductorPorUsuario(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    conductor = db.query(Conductor).filter(Conductor.id_usuario == usuario_id).first()
+    if not conductor:
+        raise HTTPException(status_code = 404, detail = "Conductor no encontrado")
+    return conductor
+
+@router.get("/conductores/{conductor_id}", response_model = schemas.ConductorResponse, summary = "Obtener conductor por ID de conductor")
+def obtenerConductorPorId(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    # Busca EXCLUSIVAMENTE por ID de conductor (cgo_usu.conductores.id)
+    # Para buscar por id_usuario usa: GET /conductores/usuario/{usuario_id}
+    conductor = db.query(Conductor).filter(Conductor.id == conductor_id).first()
+    if not conductor:
+        raise HTTPException(status_code = 404, detail = "Conductor no encontrado")
+    return conductor
+
 @router.patch("/conductores/{conductor_id}", response_model = schemas.ConductorResponse, summary = "Actualizar conductor por ID")
 def actualizarConductor(conductor_id: int, conductor_in: schemas.ConductorUpdate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     conductor = db.query(Conductor).filter(Conductor.id == conductor_id).first()
@@ -304,20 +312,27 @@ def eliminarConductor(conductor_id: int, db: Session = Depends(getDB), payload: 
 # | OPERACIONES CRUD DE VEHÍCULOS |
 # ---------------------------------
 
-@router.post("/vehiculos/", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo")
+@router.post("/vehiculos", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo")
+@router.post("/vehiculos/", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo", include_in_schema = False)
 def crearVehiculo(vehiculo_in: schemas.VehiculoCreate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     conductor = db.query(Conductor).filter(Conductor.id == vehiculo_in.id_conductor).first()
+    if not conductor:
+        # Fallback: intentar buscar por id_usuario si id_conductor no coincide directamente
+        conductor = db.query(Conductor).filter(Conductor.id_usuario == vehiculo_in.id_conductor).first()
     if not conductor:
         raise HTTPException(status_code = 404, detail = "El conductor especificado no existe")
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
     verifyResourceOwnership(payload.get("sub"), str(conductor.id_usuario), is_admin)
-    nuevo_vehiculo = Vehiculo(**vehiculo_in.model_dump())
+    datos_vehiculo = vehiculo_in.model_dump()
+    datos_vehiculo["id_conductor"] = conductor.id
+    nuevo_vehiculo = Vehiculo(**datos_vehiculo)
     db.add(nuevo_vehiculo)
     db.commit()
     db.refresh(nuevo_vehiculo)
     return nuevo_vehiculo
 
-@router.get("/vehiculos/", response_model = List[schemas.VehiculoResponse], summary = "Obtener todos los vehículos")
+@router.get("/vehiculos", response_model = List[schemas.VehiculoResponse], summary = "Obtener todos los vehículos")
+@router.get("/vehiculos/", response_model = List[schemas.VehiculoResponse], summary = "Obtener todos los vehículos", include_in_schema = False)
 def obtenerVehiculos(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     return db.query(Vehiculo).offset(skip).limit(limit).all()
 
@@ -342,6 +357,14 @@ def buscarVehiculos(
     if anio:
         query = query.filter(Vehiculo.anio == anio)
     return query.offset(skip).limit(limit).all()
+
+@router.get("/vehiculos/conductor/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor por ID")
+def obtenerVehiculosPorConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    return db.query(Vehiculo).filter(Vehiculo.id_conductor == conductor_id).all()
+
+@router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos por ID de conductor")
+def obtenerVehiculosPorIdConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    return db.query(Vehiculo).filter(Vehiculo.id_conductor == conductor_id).all()
 
 @router.patch("/vehiculos/{vehiculo_id}", response_model = schemas.VehiculoResponse, summary = "Actualizar vehículo por ID")
 def actualizarVehiculo(vehiculo_id: int, vehiculo_in: schemas.VehiculoUpdate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):

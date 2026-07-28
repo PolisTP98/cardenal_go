@@ -188,12 +188,26 @@ export default function ProfileScreen({ navigation, route }) {
   const calPasajero = profile?.calificacion_pasajero ? parseFloat(profile.calificacion_pasajero).toFixed(1) : '5.0';
   const initials = profile?.nombre_completo ? profile.nombre_completo.split(' ').map(n => n[0]).slice(0, 2).join('') : 'C';
 
+  const handleRoleChange = (newRole) => {
+    // Navegar al dashboard correcto y limpiar el historial de navegación
+    navigation.reset({
+      index: 0,
+      routes: [{ name: newRole === 'Conductor' ? 'DriverDashboard' : 'PassengerDashboard' }],
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <TopHeader 
         title={esPropioPerfil ? "Mi Perfil" : "Perfil de " + (profile?.nombre_completo?.split(' ')[0] || '')} 
         showBack 
-        onBackPress={() => navigation.goBack()} 
+        onBackPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate(isPassenger ? 'PassengerDashboard' : 'DriverDashboard');
+          }
+        }} 
       />
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -232,7 +246,7 @@ export default function ProfileScreen({ navigation, route }) {
               <TouchableOpacity
                 style={styles.driverBanner}
                 activeOpacity={0.9}
-                onPress={() => updateRole('Conductor')}
+                onPress={() => updateRole('Conductor', handleRoleChange)}
               >
                 <Text style={styles.bannerTitle}>Cambiar a Conductor</Text>
                 <Text style={styles.bannerSub}>Vuelve a tu perfil de conductor para publicar viajes.</Text>
@@ -246,7 +260,7 @@ export default function ProfileScreen({ navigation, route }) {
               <TouchableOpacity
                 style={[styles.driverBanner, { backgroundColor: COLORS.success }]}
                 activeOpacity={0.9}
-                onPress={() => updateRole('Pasajero')}
+                onPress={() => updateRole('Pasajero', handleRoleChange)}
               >
                 <Text style={styles.bannerTitle}>Cambiar a Pasajero</Text>
                 <Text style={styles.bannerSub}>Usa la app como pasajero para solicitar viajes.</Text>

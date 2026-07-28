@@ -38,8 +38,9 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
     verifyResourceOwnership(payload.get("sub"), str(vehiculo.conductor.id_usuario), is_admin)
     datos_viaje = viaje_in.model_dump()
     datos_viaje["asientos_disponibles"] = viaje_in.asientos_totales
-    datos_viaje["ubicacion_inicio"] = f"POINT({viaje_in.ubicacion_inicio.longitude} {viaje_in.ubicacion_inicio.latitude})"
-    datos_viaje["ubicacion_destino"] = f"POINT({viaje_in.ubicacion_destino.longitude} {viaje_in.ubicacion_destino.latitude})"
+    # GeoPoint.coordinates = [longitude, latitude]
+    datos_viaje["ubicacion_inicio"] = f"POINT({viaje_in.ubicacion_inicio.coordinates[0]} {viaje_in.ubicacion_inicio.coordinates[1]})"
+    datos_viaje["ubicacion_destino"] = f"POINT({viaje_in.ubicacion_destino.coordinates[0]} {viaje_in.ubicacion_destino.coordinates[1]})"
     nuevo_viaje = Viaje(**datos_viaje)
     db.add(nuevo_viaje)
     db.commit()
@@ -59,6 +60,13 @@ def obtenerViajes(
         joinedload(Viaje.vehiculo).joinedload(Vehiculo.conductor).joinedload(Conductor.usuario),
         joinedload(Viaje.estatus)
     )
+    user_id = payload.get("sub")
+    user_role = payload.get("role")
+
+    # Si el usuario consulta en modo Pasajero, excluir los viajes creados por él mismo como Conductor
+    if user_role == "Pasajero" and user_id:
+        query = query.join(Viaje.vehiculo).join(Vehiculo.conductor).filter(Conductor.id_usuario != int(user_id))
+
     if id_estatus:
         query = query.filter(Viaje.id_estatus == id_estatus)
     if fecha:
@@ -84,9 +92,6 @@ def obtenerViajesConductor(
         joinedload(Viaje.solicitudes)
     ).filter(Viaje.id_vehiculo.in_(vehiculo_ids)).order_by(Viaje.fecha.desc()).all()
     return viajes
-@router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
-def obtenerViajes(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(Viaje).offset(skip).limit(limit).all()
 
 @router.get("/buscar", response_model = List[schemas.ViajeResponse], summary = "Buscar viaje(s) con filtros dinámicos")
 def buscarViajes(
@@ -99,6 +104,12 @@ def buscarViajes(
     payload: dict = Depends(verifyToken)
 ):
     query = db.query(Viaje)
+    user_id = payload.get("sub")
+    user_role = payload.get("role")
+
+    if user_role == "Pasajero" and user_id:
+        query = query.join(Viaje.vehiculo).join(Vehiculo.conductor).filter(Conductor.id_usuario != int(user_id))
+
     if vehiculo_id:
         query = query.filter(Viaje.id_vehiculo == vehiculo_id)
     if estatus_id:
@@ -149,76 +160,6 @@ def eliminarViaje(viaje_id: int, db: Session = Depends(getDB), payload: dict = D
     db.delete(viaje)
     db.commit()
 
-
-# ---------------------------------------------
-# | OPERACIONES CRUD DE SOLICITUDES DE VIAJES |
-# ---------------------------------------------
-
-@router.post("/solicitudes/", response_model = schemas.SolicitudViajeResponse, status_code = status.HTTP_201_CREATED, summary = "Crear solicitud de viaje")
-def crearSolicitud(solicitud_in: schemas.SolicitudViajeCreate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(solicitud_in.id_pasajero), is_admin)
-    datos_solicitud = solicitud_in.model_dump()
-    datos_solicitud["ubicacion_recogida"] = f"POINT({solicitud_in.ubicacion_recogida.longitude} {solicitud_in.ubicacion_recogida.latitude})"
-    datos_solicitud["ubicacion_bajada"] = f"POINT({solicitud_in.ubicacion_bajada.longitude} {solicitud_in.ubicacion_bajada.latitude})"
-    nueva_solicitud = SolicitudViaje(**datos_solicitud)
-    db.add(nueva_solicitud)
-    db.commit()
-    db.refresh(nueva_solicitud)
-    return nueva_solicitud
-
-@router.get("/solicitudes/", response_model = List[schemas.SolicitudViajeResponse], summary = "Obtener todas las solicitudes de viajes")
-def obtenerSolicitudes(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(SolicitudViaje).offset(skip).limit(limit).all()
-
-@router.get("/solicitudes/buscar", response_model = List[schemas.SolicitudViajeResponse], summary = "Buscar solicitud(es) de viaje(s) con filtros dinámicos")
-def buscarSolicitudes(
-    viaje_id: Optional[int] = Query(None, description = "Filtrar por ID del viaje"), 
-    pasajero_id: Optional[int] = Query(None, description = "Filtrar por ID del pasajero"), 
-    estatus_id: Optional[int] = Query(None, description = "Filtrar por ID del estatus"), 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(verifyToken)
-):
-    query = db.query(SolicitudViaje)
-    if viaje_id:
-        query = query.filter(SolicitudViaje.id_viaje == viaje_id)
-    if pasajero_id:
-        query = query.filter(SolicitudViaje.id_pasajero == pasajero_id)
-    if estatus_id:
-        query = query.filter(SolicitudViaje.id_estatus == estatus_id)
-    return query.offset(skip).limit(limit).all()
-
-@router.get("/solicitudes/{solicitud_id}", response_model = schemas.SolicitudViajeResponse, summary = "Obtener solicitud de viaje por ID")
-def obtenerSolicitudPorId(solicitud_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    solicitud = db.query(SolicitudViaje).filter(SolicitudViaje.id == solicitud_id).first()
-    if not solicitud:
-        raise HTTPException(status_code = 404, detail = "Solicitud de viaje no encontrada")
-    return solicitud
-
-@router.put("/solicitudes/{solicitud_id}", response_model = schemas.SolicitudViajeResponse, summary = "Actualizar solicitud por ID")
-def actualizarSolicitud(solicitud_id: int, solicitud_in: schemas.SolicitudViajeUpdate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    solicitud = db.query(SolicitudViaje).filter(SolicitudViaje.id == solicitud_id).first()
-    if not solicitud:
-        raise HTTPException(status_code = 404, detail = "Solicitud de viaje no encontrada")
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(solicitud.id_pasajero), is_admin)
-    for key, value in solicitud_in.model_dump(exclude_unset = True).items():
-        setattr(solicitud, key, value)
-    db.commit()
-    db.refresh(solicitud)
-    return solicitud
-
-@router.delete("/solicitudes/{solicitud_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar solicitud de viaje por ID")
-def eliminarSolicitud(solicitud_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    solicitud = db.query(SolicitudViaje).filter(SolicitudViaje.id == solicitud_id).first()
-    if not solicitud:
-        raise HTTPException(status_code = 404, detail = "Solicitud no encontrada")
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(solicitud.id_pasajero), is_admin)
-    db.delete(solicitud)
-    db.commit()
 
 
 # ----------------------------------------------
@@ -301,7 +242,7 @@ def crearHistorialUbicacion(historial_in: schemas.HistorialUbicacionViajeCreate,
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
     verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
     datos_historial = historial_in.model_dump()
-    datos_historial["ubicacion"] = f"POINT({historial_in.ubicacion.longitude} {historial_in.ubicacion.latitude})"
+    datos_historial["ubicacion"] = f"POINT({historial_in.ubicacion.coordinates[0]} {historial_in.ubicacion.coordinates[1]})"
     nuevo_historial = HistorialUbicacionViaje(**datos_historial)
     db.add(nuevo_historial)
     db.commit()
@@ -439,15 +380,24 @@ def actualizarSolicitud(
     sol_id: int,
     sol_in: schemas.SolicitudViajeUpdate,
     db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
+    payload: dict = Depends(requireRole(["Conductor", "Superadministrador", "Administrador"]))
 ):
     sol = db.query(SolicitudViaje).filter(SolicitudViaje.id == sol_id).first()
     if not sol:
         raise HTTPException(status_code = 404, detail = "Solicitud no encontrada")
+    # Permitir que conductor o admin actualice el estatus de la solicitud
+    # Se valida que el conductor es dueño del viaje asociado
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    # Obtener el viaje asociado a la solicitud
+    viaje = db.query(Viaje).filter(Viaje.id == sol.id_viaje).first()
+    if not viaje:
+        raise HTTPException(status_code = 404, detail = "Viaje no encontrado")
+    # Verificar que el usuario es propietario del viaje (conductor) o admin
+    verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
+    
     nuevo_estatus = sol_in.id_estatus
 
     if nuevo_estatus == 3:  # Aceptada
-        viaje = db.query(Viaje).filter(Viaje.id == sol.id_viaje).first()
         if viaje.asientos_disponibles < 1:
             raise HTTPException(status_code = 400, detail = "No hay lugares disponibles")
         viaje.asientos_disponibles -= 1
@@ -460,7 +410,6 @@ def actualizarSolicitud(
             nuevo_chat = Chat(id_tipo_chat = 1, id_viaje = sol.id_viaje)
             db.add(nuevo_chat)
     elif nuevo_estatus == 5 and sol.id_estatus == 3:  # Cancelada desde Aceptada → restaurar asiento
-        viaje = db.query(Viaje).filter(Viaje.id == sol.id_viaje).first()
         if viaje:
             viaje.asientos_disponibles = min(
                 viaje.asientos_disponibles + 1,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import CustomInput from '../components/CustomInput';
@@ -9,36 +9,41 @@ export default function NewPasswordScreen({ navigation }) {
     return (
         <View style={styles.container}>
         <TopHeader showBack onBackPress={() => navigation.goBack()} />
-        <View style={styles.content}>
-            <Text style={styles.title}>Nueva contraseña</Text>
-            <Text style={styles.description}>
-            Crea una nueva contraseña segura para tu cuenta.
-            </Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+              <Text style={styles.title}>Nueva contraseña</Text>
+              <Text style={styles.description}>
+              Crea una nueva contraseña segura para tu cuenta.
+              </Text>
 
-            <CustomInput 
-            label="Nueva contraseña" 
-            placeholder="Ingresa tu nueva contraseña" 
-            secureTextEntry
-            />
-            <CustomInput 
-            label="Confirmar contraseña" 
-            placeholder="Repite tu contraseña" 
-            secureTextEntry
-            />
+              <CustomInput 
+              label="Nueva contraseña" 
+              placeholder="Ingresa tu nueva contraseña" 
+              secureTextEntry
+              />
+              <CustomInput 
+              label="Confirmar contraseña" 
+              placeholder="Repite tu contraseña" 
+              secureTextEntry
+              />
 
-            <View style={styles.requirementsBox}>
-            <Text style={styles.reqTitle}>Requisitos de seguridad:</Text>
-            <Text style={styles.reqItem}>• Mínimo 8 caracteres</Text>
-            <Text style={styles.reqItem}>• Al menos un número</Text>
-            <Text style={styles.reqItem}>• Al menos un símbolo (ej. @, #, $, !)</Text>
-            </View>
+              <View style={styles.requirementsBox}>
+              <Text style={styles.reqTitle}>Requisitos de seguridad:</Text>
+              <Text style={styles.reqItem}>• Mínimo 8 caracteres</Text>
+              <Text style={styles.reqItem}>• Al menos un número</Text>
+              <Text style={styles.reqItem}>• Al menos un símbolo (ej. @, #, $, !)</Text>
+              </View>
 
-            <PrimaryButton 
-            title="Actualizar contraseña" 
-            onPress={() => navigation.navigate('PasswordSuccess')} 
-            style={styles.button}
-            />
-        </View>
+              <PrimaryButton 
+              title="Actualizar contraseña" 
+              onPress={() => navigation.navigate('PasswordSuccess')} 
+              style={styles.button}
+              />
+          </ScrollView>
+        </KeyboardAvoidingView>
         </View>
     );
 }
