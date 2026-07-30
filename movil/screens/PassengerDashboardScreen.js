@@ -132,15 +132,17 @@ export default function PassengerDashboardScreen({ navigation }) {
           <Text style={styles.navLabel}>Mis Solicitudes</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('DriverRegistration')}
-        >
-          <View style={[styles.iconBg, { backgroundColor: '#D1FAE5' }]}>
-            <Ionicons name="car-outline" size={24} color="#059669" />
-          </View>
-          <Text style={styles.navLabel}>Ser Conductor</Text>
-        </TouchableOpacity>
+        {user?.originalRole !== 'Conductor' && (
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => navigation.navigate('DriverRegistration')}
+          >
+            <View style={[styles.iconBg, { backgroundColor: '#D1FAE5' }]} >
+              <Ionicons name="car-outline" size={24} color="#059669" />
+            </View>
+            <Text style={styles.navLabel}>Ser Conductor</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.sectionHeader}>

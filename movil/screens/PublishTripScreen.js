@@ -23,13 +23,16 @@ export default function PublishTripScreen({ navigation }) {
   // Form Fields & Coordinates
   const [origen, setOrigen] = useState('UPQ (Universidad Politécnica de Querétaro)');
   const [destino, setDestino] = useState('Centro Histórico de Querétaro');
+  const [origenValid, setOrigenValid] = useState(true);
+  const [destinoValid, setDestinoValid] = useState(true);
   const [origenCoords, setOrigenCoords] = useState({ latitude: 20.5891, longitude: -100.4376 });
   const [destinoCoords, setDestinoCoords] = useState({ latitude: 20.5888, longitude: -100.3899 });
   const [selectingTarget, setSelectingTarget] = useState('destino'); // 'origen' | 'destino'
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
   const [asientos, setAsientos] = useState('3');
-  const [precio, setPrecio] = useState('25');
+  // Dynamic pricing handled by passengers now, so precio is fixed to 0 at trip creation
+  const [precio, setPrecio] = useState('0');
 
   const waypoints = useMemo(() => [
     { ...origenCoords, title: `Origen: ${origen}`, color: 'green' },
@@ -74,8 +77,13 @@ export default function PublishTripScreen({ navigation }) {
   }, []);
 
   const handlePublish = async () => {
-    if (!origen || !destino || !fecha || !hora || !asientos || !precio) {
+    if (!origen || !destino || !fecha || !hora || !asientos) {
       Alert.alert('Campos incompletos', 'Por favor llena todos los campos del viaje.');
+      return;
+    }
+    
+    if (!origenValid || !destinoValid) {
+      Alert.alert('Ubicación inválida', 'Por favor selecciona una ubicación sugerida o válida en el mapa para el origen y destino.');
       return;
     }
 
@@ -93,16 +101,12 @@ export default function PublishTripScreen({ navigation }) {
     }
 
     const numericSeats = parseInt(asientos);
-    if (isNaN(numericSeats) || numericSeats <= 0) {
-      Alert.alert('Asientos inválidos', 'El número de asientos debe ser mayor a 0.');
+    if (isNaN(numericSeats) || numericSeats <= 0 || numericSeats > 4) {
+      Alert.alert('Asientos inválidos', 'Por seguridad, el número de asientos debe ser entre 1 y 4.');
       return;
     }
 
-    const numericPrice = parseFloat(precio);
-    if (isNaN(numericPrice) || numericPrice < 0) {
-      Alert.alert('Tarifa inválida', 'La aportación sugerida debe ser 0 o mayor.');
-      return;
-    }
+    const numericPrice = 0; // Dynamic pricing calculated per passenger request
 
     if (!vehicle) {
       Alert.alert('Vehículo no seleccionado', 'Registra un vehículo para continuar.');
@@ -182,26 +186,34 @@ export default function PublishTripScreen({ navigation }) {
               label="Origen"
               placeholder="Ej. UPQ o tu dirección de salida"
               value={origen}
-              onChangeText={setOrigen}
+              onChangeText={(txt) => {
+                setOrigen(txt);
+                setOrigenValid(false);
+              }}
               iconName="navigate-circle-outline"
               iconColor="green"
               style={{ zIndex: 20 }}
               onSelectLocation={(loc) => {
                 setOrigen(loc.address || loc.name);
                 setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                setOrigenValid(true);
               }}
             />
             <LocationSearchInput
               label="Destino"
               placeholder="¿A dónde vas?"
               value={destino}
-              onChangeText={setDestino}
+              onChangeText={(txt) => {
+                setDestino(txt);
+                setDestinoValid(false);
+              }}
               iconName="location-sharp"
               iconColor="red"
               style={{ zIndex: 10 }}
               onSelectLocation={(loc) => {
                 setDestino(loc.address || loc.name);
                 setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                setDestinoValid(true);
               }}
             />
 
@@ -232,11 +244,13 @@ export default function PublishTripScreen({ navigation }) {
                   setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
                   if (loc.address) {
                     setOrigen(loc.address);
+                    setOrigenValid(true);
                   }
                 } else {
                   setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
                   if (loc.address) {
                     setDestino(loc.address);
+                    setDestinoValid(true);
                   }
                 }
               }}
@@ -267,7 +281,7 @@ export default function PublishTripScreen({ navigation }) {
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 8 }}>
               <CustomInput
-                label="Asientos Disponibles"
+                label="Asientos Disponibles (Max 4)"
                 placeholder="Ej. 3"
                 keyboardType="numeric"
                 value={asientos}
@@ -275,13 +289,12 @@ export default function PublishTripScreen({ navigation }) {
               />
             </View>
             <View style={{ flex: 1, marginLeft: 8 }}>
-              <CustomInput
-                label="Aportación ($)"
-                placeholder="Ej. 25"
-                keyboardType="numeric"
-                value={precio}
-                onChangeText={setPrecio}
-              />
+              <View style={styles.dynamicPriceInfo}>
+                <Ionicons name="cash-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.dynamicPriceText}>
+                  La tarifa se calculará automáticamente por pasajero según su distancia.
+                </Text>
+              </View>
             </View>
           </View>
         </Card>
@@ -398,4 +411,21 @@ const styles = StyleSheet.create({
   modeBtnTextActive: {
     color: '#FFF',
   },
+  dynamicPriceInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  dynamicPriceText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#0369A1',
+    marginLeft: 6,
+    lineHeight: 14,
+  }
 });

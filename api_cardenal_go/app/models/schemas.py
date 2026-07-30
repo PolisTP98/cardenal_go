@@ -428,6 +428,7 @@ class ViajeResponse(BaseModel):
     fecha_hora_registro: datetime
     vehiculo: Optional[VehiculoResponse] = None
     estatus: Optional[EstatusViajeResponse] = None
+    solicitudes: Optional[List["SolicitudViajeResponse"]] = []
     model_config = ConfigDict(from_attributes = True)
     @field_validator("ubicacion_inicio", "ubicacion_destino", mode = "before")
     @classmethod

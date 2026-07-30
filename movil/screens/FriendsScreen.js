@@ -18,7 +18,7 @@ import {
   getChatDirecto,
 } from '../src/api/socialApi';
 
-const TABS = ['Amigos', 'Solicitudes', 'Enviadas'];
+const TABS = ['Amigos', 'Solicitudes', 'Enviadas', 'Bloqueados'];
 const ESTATUS = { PENDIENTE: 1, AMIGOS: 2, BLOQUEADO: 3 };
 
 export default function FriendsScreen({ navigation }) {
@@ -27,6 +27,8 @@ export default function FriendsScreen({ navigation }) {
   const [amigos, setAmigos] = useState([]);
   const [pendientes, setPendientes] = useState([]);
   const [enviadas, setEnviadas] = useState([]);
+  // Usuarios que YO bloqueé (id_usuario1 === user.id && estatus BLOQUEADO)
+  const [bloqueados, setBloqueados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
@@ -46,6 +48,15 @@ export default function FriendsScreen({ navigation }) {
       setEnviadas(
         todas.filter(
           (r) => r.id_estatus_social === ESTATUS.PENDIENTE && r.id_usuario1 === user.id
+        )
+      );
+
+      // ── Bloqueos: solo los que YO inicié (id_usuario1 === user.id) ──────────
+      // Si el usuario bloqueado intenta ver sus relaciones, esta relación
+      // tiene id_usuario1 = el que lo bloqueó ≠ user.id, así que no aparece aquí.
+      setBloqueados(
+        todas.filter(
+          (r) => r.id_estatus_social === ESTATUS.BLOQUEADO && r.id_usuario1 === user.id
         )
       );
     } catch (err) {
@@ -117,6 +128,7 @@ export default function FriendsScreen({ navigation }) {
   };
 
   const handleBloquear = (relacion) => {
+    // Solo quien inicia el bloqueo puede bloquearlo → se asegura poniendo id_usuario1 = user.id
     const otroPerson = relacion.id_usuario1 === user.id
       ? relacion.usuario2?.nombre_completo
       : relacion.usuario1?.nombre_completo;
@@ -130,10 +142,37 @@ export default function FriendsScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Asegurarse de que el bloqueo queda registrado con user.id como usuario1
+              // La API acepta el id de la relación existente y actualiza su estatus
               await actualizarRelacionSocial(relacion.id, ESTATUS.BLOQUEADO);
               await cargarTodo();
             } catch {
               Alert.alert('Error', 'No se pudo bloquear al usuario.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDesbloquear = (relacion) => {
+    // Solo el que bloqueó (id_usuario1 === user.id) puede desbloquear
+    const bloqueadoNombre = relacion.usuario2?.nombre_completo || 'este usuario';
+    Alert.alert(
+      'Desbloquear usuario',
+      `¿Deseas desbloquear a ${bloqueadoNombre}? Podrán volver a coincidir en viajes.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desbloquear',
+          onPress: async () => {
+            try {
+              // Eliminar la relación para restaurar el estado neutral
+              await eliminarAmistad(relacion.id);
+              await cargarTodo();
+              Alert.alert('Desbloqueado', `Has desbloqueado a ${bloqueadoNombre}.`);
+            } catch {
+              Alert.alert('Error', 'No se pudo desbloquear al usuario.');
             }
           },
         },
@@ -258,6 +297,36 @@ export default function FriendsScreen({ navigation }) {
     );
   };
 
+  const renderBloqueado = ({ item }) => {
+    // Cuando yo bloqueé: id_usuario1 = user.id, id_usuario2 = bloqueado
+    const bloqueado = item.usuario2;
+    return (
+      <View style={styles.userCard}>
+        <TouchableOpacity
+          style={styles.userInfoTouchable}
+          onPress={() => navigation.navigate('Profile', { usuarioId: bloqueado?.id })}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.userAvatar, { backgroundColor: '#94A3B8' }]}>
+            <Text style={styles.userAvatarText}>{(bloqueado?.nombre_completo || 'U').charAt(0)}</Text>
+          </View>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{bloqueado?.nombre_completo || 'Usuario'}</Text>
+            <View style={styles.blockedBadgeRow}>
+              <Ionicons name="ban" size={11} color={COLORS.danger} />
+              <Text style={styles.blockedBadgeText}>Bloqueado por ti</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+        {/* Solo el bloqueador (yo) ve este botón */}
+        <TouchableOpacity style={styles.unblockBtn} onPress={() => handleDesbloquear(item)}>
+          <Ionicons name="lock-open-outline" size={14} color="#FFF" />
+          <Text style={styles.unblockBtnText}>Desbloquear</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   // ─── LISTAS POR TAB ───────────────────────────────────────
   const renderContenidoTab = () => {
     if (loading) {
@@ -311,6 +380,22 @@ export default function FriendsScreen({ navigation }) {
             data={enviadas}
             keyExtractor={(i) => i.id.toString()}
             renderItem={renderEnviada}
+            contentContainerStyle={{ paddingBottom: 16 }}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+          />
+        );
+      case 3:
+        return bloqueados.length === 0 ? (
+          <View style={styles.centered}>
+            <Ionicons name="shield-checkmark-outline" size={52} color={COLORS.border} />
+            <Text style={styles.emptyTitle}>Sin usuarios bloqueados</Text>
+            <Text style={styles.emptySubText}>Los usuarios que bloquees aparecerán aquí. Solo tú puedes desbloquearlos.</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={bloqueados}
+            keyExtractor={(i) => i.id.toString()}
+            renderItem={renderBloqueado}
             contentContainerStyle={{ paddingBottom: 16 }}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
           />
@@ -369,25 +454,39 @@ export default function FriendsScreen({ navigation }) {
       </View>
 
       {/* TABS */}
-      <View style={styles.tabBar}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabBar}
+        contentContainerStyle={styles.tabBarContent}
+      >
         {TABS.map((tab, idx) => {
-          const esBadge = idx === 1 && pendientes.length > 0;
+          const esBadgeSolicitudes = idx === 1 && pendientes.length > 0;
+          const esBadgeBloqueados = idx === 3 && bloqueados.length > 0;
           return (
             <TouchableOpacity
               key={tab}
               style={[styles.tabBtn, tabActual === idx && styles.tabBtnActive]}
               onPress={() => setTabActual(idx)}
             >
+              {idx === 3 && (
+                <Ionicons
+                  name="ban"
+                  size={13}
+                  color={tabActual === idx ? COLORS.danger : COLORS.textSecondary}
+                  style={{ marginRight: 3 }}
+                />
+              )}
               <Text style={[styles.tabText, tabActual === idx && styles.tabTextActive]}>{tab}</Text>
-              {esBadge && (
-                <View style={styles.tabBadge}>
-                  <Text style={styles.tabBadgeText}>{pendientes.length}</Text>
+              {(esBadgeSolicitudes || esBadgeBloqueados) && (
+                <View style={[styles.tabBadge, idx === 3 && styles.tabBadgeDanger]}>
+                  <Text style={styles.tabBadgeText}>{idx === 1 ? pendientes.length : bloqueados.length}</Text>
                 </View>
               )}
             </TouchableOpacity>
           );
         })}
-      </View>
+      </ScrollView>
 
       {/* CONTENIDO */}
       <View style={{ flex: 1 }}>
@@ -509,20 +608,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
-  // TABS
+  // TABS — scrollable para acomodar el 4.o tab
   tabBar: {
-    flexDirection: 'row',
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    maxHeight: 48,
+  },
+  tabBarContent: {
+    flexDirection: 'row',
   },
   tabBtn: {
-    flex: 1,
-    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
   },
   tabBtnActive: {
     borderBottomWidth: 2,
@@ -545,6 +647,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
+  },
+  tabBadgeDanger: {
+    backgroundColor: COLORS.danger,
   },
   tabBadgeText: {
     color: '#FFF',
@@ -629,5 +734,31 @@ const styles = StyleSheet.create({
   cancelSolicitudText: {
     color: COLORS.textSecondary,
     fontSize: 13,
+  },
+  // BLOQUEADOS
+  blockedBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  blockedBadgeText: {
+    fontSize: 11,
+    color: COLORS.danger,
+    fontWeight: '600',
+  },
+  unblockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#64748B',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  unblockBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

@@ -1,26 +1,23 @@
 # -------------------------------------------------
 # | REDES PARA AISLAMIENTO Y COMUNICACIÓN INTERNA |
 # -------------------------------------------------
-
 networks:
   cardenal_go_network:
     driver: bridge
 
-
 # ------------------------------------------------------
 # | VOLÚMENES PARA GARANTIZAR LA PERSISTENCIA DE DATOS |
 # ------------------------------------------------------
-
 volumes:
   postgres_data:
   pgadmin_data:
-
+  prometheus_data:
+  grafana_data:
 
 services:
   # ------------------------------------------------------
   # | (1) BASE DE DATOS (PostgreSQL CON SOPORTE PostGIS) |
   # ------------------------------------------------------
-
   db:
     image: postgis/postgis:15-3.4-alpine
     container_name: cardenal_go_db
@@ -33,24 +30,19 @@ services:
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
-      # ESTABLECER LA PERSISTENCIA DE LOS REGISTROS DE LA BASE DE DATOS
       - postgres_data:/var/lib/postgresql/data
-      # EJECUTAR EL SCRIPT DE CREACIÓN DE LA BASE DE DATOS AL MONTAR EL CONTENEDOR POR PRIMERA VEZ
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      # ASEGURAR QUE FastAPI NO SE INICIE HASTA QUE Postgres ACEPTE CONEXIONES
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}" ]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
       - cardenal_go_network
 
-
   # --------------------------------------------------------------
   # | (2) INTERFAZ DE ADMINISTRACIÓN DE BASE DE DATOS (pgAdmin4) |
   # --------------------------------------------------------------
-
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: cardenal_go_pgadmin
@@ -58,33 +50,29 @@ services:
     restart: always
     env_file: .env
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${MASTER_USER:-admin@cardenalgo.com}
-      PGADMIN_DEFAULT_PASSWORD: ${MASTER_PASSWORD:-admin_secret}
+      PGADMIN_DEFAULT_EMAIL: ${MASTER_USER}
+      PGADMIN_DEFAULT_PASSWORD: ${MASTER_PASSWORD}
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
       PGADMIN_CONFIG_SERVER_MODE: 'True'
       PGADMIN_CONFIG_CHECK_VERSION: 'False'
     ports:
       - "8080:80"
     volumes:
-      # ESTABLECER LA PERSISTENCIA DE LAS CREDENCIALES DE SERVIDORES EN LA UI
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
       - db
     networks:
       - cardenal_go_network
 
-
   # -----------------------------------
   # | (3) BACKEND DE LA API (FastAPI) |
   # -----------------------------------
-
   backend:
     build:
       context: ./api_cardenal_go
       dockerfile: Dockerfile
     container_name: cardenal_go_backend
     restart: always
-    # SOBREESCRIBIR EL CMD DEL Dockerfile PARA HABILITAR EL HOT-RELOAD
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file: .env
     environment:
@@ -92,10 +80,111 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # MONTAR EL CÓDIGO FUENTE LOCAL DENTRO DE /app
       - ./api_cardenal_go:/app
     depends_on:
       db:
         condition: service_healthy
     networks:
       - cardenal_go_network
+
+  # ---------------------------------------
+  # | (4) MICROSERVICIO IA (Ridesharing)  |
+  # ---------------------------------------
+  ridesharing_ai:
+    build:
+      context: ./ridesharing_ai
+      dockerfile: Dockerfile
+    container_name: cardenal_go_ridesharing_ai
+    restart: always
+    env_file: .env
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ridesharing_ai:/app
+    networks:
+      - cardenal_go_network
+
+  # -----------------------------------
+  # | (5) STACK DE MONITOREO          |
+  # -----------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-lab
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - cadvisor
+      - postgres-exporter
+      - node-exporter
+    networks:
+      - cardenal_go_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-lab
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - cardenal_go_network
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor-lab
+    ports:
+      - "8081:8080"
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    networks:
+      - cardenal_go_network
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter-lab
+    ports:
+      - "9187:9187"
+    env_file: .env
+    environment:
+      DATA_SOURCE_NAME: "${DATABASE_URL}?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - cardenal_go_network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter-lab
+    ports:
+      - "9100:9100"
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - /:/host:ro
+    networks:
+      - cardenal_go_network
+    restart: unless-stopped

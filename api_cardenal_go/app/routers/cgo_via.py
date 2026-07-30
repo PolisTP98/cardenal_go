@@ -16,6 +16,8 @@ from data.models import Viaje, Vehiculo, SolicitudViaje, PagoTransferencia, Hist
 from models import schemas
 from security.auth import verifyToken, requireRole, verifyResourceOwnership
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF
+import httpx
+from sqlalchemy import func
 
 
 # ---------------------------------------
@@ -352,7 +354,7 @@ def obtenerSolicitudesPasajero(
 def obtenerSolicitudesViaje(
     viaje_id: int,
     db: Session = Depends(getDB),
-    payload: dict = Depends(requireRole(["Conductor"]))
+    payload: dict = Depends(verifyToken)
 ):
     solicitudes = db.query(SolicitudViaje).options(
         joinedload(SolicitudViaje.pasajero),
@@ -421,6 +423,96 @@ def actualizarSolicitud(
     db.commit()
     db.refresh(sol)
     return sol
+
+
+# --------------------------
+# | RECOMENDACIÓN DE IA    |
+# --------------------------
+
+@router.get("/solicitudes/{sol_id}/recomendacion-ia", summary = "Obtener recomendación de la IA para una solicitud")
+def obtenerRecomendacionIA(
+    sol_id: int,
+    db: Session = Depends(getDB),
+    payload: dict = Depends(verifyToken)
+):
+    sol = db.query(SolicitudViaje).filter(SolicitudViaje.id == sol_id).first()
+    if not sol:
+        raise HTTPException(status_code = 404, detail = "Solicitud no encontrada")
+    
+    viaje = db.query(Viaje).filter(Viaje.id == sol.id_viaje).first()
+    if not viaje:
+        raise HTTPException(status_code = 404, detail = "Viaje no encontrado")
+    
+    # Validar que el que consulta es el conductor, el pasajero dueño de la solicitud, o un admin
+    caller_id = str(payload.get("sub"))
+    conductor_user_id = str(viaje.vehiculo.conductor.id_usuario)
+    pasajero_user_id = str(sol.id_pasajero)
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    if not is_admin and caller_id != conductor_user_id and caller_id != pasajero_user_id:
+        raise HTTPException(status_code=403, detail="No tienes permiso para consultar esta recomendación")
+
+    # 1. Calcular distancia de desvío (en km) usando PostGIS (ST_DistanceSphere retorna metros)
+    dist_metros = db.query(
+        func.ST_DistanceSphere(Viaje.ubicacion_destino, SolicitudViaje.ubicacion_bajada)
+    ).filter(
+        Viaje.id == viaje.id,
+        SolicitudViaje.id == sol.id
+    ).scalar() or 0.0
+
+    detour_distance_km = float(dist_metros) / 1000.0
+    
+    # 2. Calcular tiempo estimado de desvío (Asumiendo 30 km/h velocidad media)
+    detour_time_min = (detour_distance_km / 30.0) * 60.0
+
+    # 3. Datos financieros
+    expected_extra_profit = float(sol.precio) if sol.precio else 0.0
+    # Consumo estimado: $24 MXN por litro, rendimiento de 12 km/l
+    fuel_cost_estimate = (detour_distance_km / 12.0) * 24.0
+
+    # 4. Otros factores
+    hour_of_day = viaje.hora_inicio.hour if viaje.hora_inicio else 12
+
+    # Valores mockeados por falta de APIs externas en este MVP
+    pickup_zone_risk = 0.2  # Riesgo bajo por defecto
+    is_raining = 0          # Sin lluvia por defecto
+    
+    conductor = db.query(Conductor).filter(Conductor.id == viaje.vehiculo.id_conductor).first()
+    driver_historical_acceptance = 0.8 # Valor simulado de aceptación histórica del conductor
+
+    payload_ia = {
+        "detour_distance_km": round(detour_distance_km, 2),
+        "detour_time_min": round(detour_time_min, 2),
+        "pickup_zone_risk": pickup_zone_risk,
+        "expected_extra_profit": round(expected_extra_profit, 2),
+        "fuel_cost_estimate": round(fuel_cost_estimate, 2),
+        "hour_of_day": hour_of_day,
+        "is_raining": is_raining,
+        "driver_historical_acceptance": driver_historical_acceptance
+    }
+
+    try:
+        # Llamar al microservicio interno de IA (nombre del servicio en docker-compose)
+        # Timeout de 3 segundos para que no bloquee mucho la UI
+        response = httpx.post("http://ridesharing_ai:8001/predict", json=payload_ia, timeout=3.0)
+        response.raise_for_status()
+        resultado = response.json()
+        
+        return {
+            "score": resultado.get("convenience_score", 0.0),
+            "recommendation": resultado.get("recommendation", "UNKNOWN"),
+            "is_convenient": resultado.get("is_convenient", False),
+            "features_used": payload_ia
+        }
+    except Exception as e:
+        # En caso de error, retornar una falla gracefully
+        print(f"[Error IA] No se pudo conectar al microservicio ridesharing_ai: {e}")
+        return {
+            "score": 0.0,
+            "recommendation": "ERROR",
+            "is_convenient": False,
+            "error": "IA service unavailable",
+            "features_used": payload_ia
+        }
 
 
 # --------------------------

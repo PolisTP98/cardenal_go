@@ -31,3 +31,10 @@ export const actualizarSolicitud = async (solId, idEstatus) => {
   const r = await apiClient.put(`/api/via/solicitudes/${solId}`, { id_estatus: idEstatus });
   return r.data;
 };
+
+// GET /api/via/solicitudes/:solId/recomendacion-ia — Obtener Score IA
+export const getRecomendacionIA = async (solId) => {
+  const r = await apiClient.get(`/api/via/solicitudes/${solId}/recomendacion-ia`);
+  return r.data;
+};
+

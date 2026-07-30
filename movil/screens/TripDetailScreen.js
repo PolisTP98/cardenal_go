@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
 import { getViaje, actualizarViaje } from '../src/api/viajesApi';
-import { getSolicitudesViaje, crearSolicitud, actualizarSolicitud, getSolicitudesPasajero } from '../src/api/solicitudesApi';
+import { getSolicitudesViaje, crearSolicitud, actualizarSolicitud, getSolicitudesPasajero, getRecomendacionIA } from '../src/api/solicitudesApi';
 import { getChatViaje } from '../src/api/socialApi';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
@@ -12,13 +12,13 @@ import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadingOverlay from '../components/LoadingOverlay';
-import CustomInput from '../components/CustomInput';
 import MapaRutas, { getDistanceKm } from '../components/MapaRutas';
+import LocationSearchInput from '../components/LocationSearchInput';
 
 export default function TripDetailScreen({ route, navigation }) {
   const { viajeId } = route.params;
   const { user, isDriver } = useAuth();
-  
+
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [viaje, setViaje] = useState(null);
@@ -28,6 +28,18 @@ export default function TripDetailScreen({ route, navigation }) {
   // Passenger requested dropoff location state
   const [pasajeroDestino, setPasajeroDestino] = useState('');
   const [passengerDropoffCoords, setPassengerDropoffCoords] = useState(null);
+  const [destinoValidado, setDestinoValidado] = useState(false);
+
+  // Passenger requested pickup location state
+  const [pasajeroOrigen, setPasajeroOrigen] = useState('');
+  const [passengerPickupCoords, setPassengerPickupCoords] = useState(null);
+  const [origenValidado, setOrigenValidado] = useState(false);
+  const [passengerSelectingTarget, setPassengerSelectingTarget] = useState('destino');
+
+  // AI Evaluation state
+  const [aiEvaluations, setAiEvaluations] = useState({});
+  // Expanded map previews for driver requests
+  const [expandedMaps, setExpandedMaps] = useState({});
 
   const loadData = async () => {
     try {
@@ -40,11 +52,11 @@ export default function TripDetailScreen({ route, navigation }) {
       const tripDriverId = conductor?.id_usuario || conductor?.usuario?.id;
       const isOwner = tripDriverId != null && String(tripDriverId) === String(user.id);
 
-      if (isOwner) {
-        // Conductor mode: load requests list
-        const reqs = await getSolicitudesViaje(viajeId);
-        setSolicitudes(reqs);
-      } else {
+      // Fetch all requests for both driver and passenger to map the route
+      const reqs = await getSolicitudesViaje(viajeId);
+      setSolicitudes(reqs);
+
+      if (!isOwner) {
         // Pasajero mode: check if this passenger has already sent a request
         const myReqs = await getSolicitudesPasajero(user.id);
         const activeReq = myReqs.find(s => s.id_viaje === viajeId && s.id_estatus !== 5); // 5 is Cancelled
@@ -62,26 +74,183 @@ export default function TripDetailScreen({ route, navigation }) {
     loadData();
   }, [viajeId]);
 
+  // Auto-evaluate pending requests with AI
+  useEffect(() => {
+    const evaluatePending = async () => {
+      const pending = solicitudes.filter(s => s.id_estatus === 1 && !aiEvaluations[s.id]);
+      if (pending.length === 0) return;
+
+      for (const req of pending) {
+        try {
+          const result = await getRecomendacionIA(req.id);
+          setAiEvaluations(prev => ({ ...prev, [req.id]: result }));
+        } catch (err) {
+          console.error('Error evaluating IA for req', req.id, err);
+        }
+      }
+    };
+    evaluatePending();
+  }, [solicitudes, aiEvaluations]);
+
+  // ─── Waypoints dinámicos para el mapa principal ──────────────────────────────
+  // Se calculan con useMemo para que el mapa reaccione cuando cambian las solicitudes
+  const mainMapWaypoints = useMemo(() => {
+    if (!viaje) return [];
+
+    const conductorObj = viaje.vehiculo?.conductor;
+    const tDriverId = conductorObj?.id_usuario || conductorObj?.usuario?.id;
+    const isOwner = tDriverId != null && String(tDriverId) === String(user.id);
+
+    const origen = {
+      latitude: viaje.ubicacion_inicio?.coordinates?.[1] || 20.5891,
+      longitude: viaje.ubicacion_inicio?.coordinates?.[0] || -100.4376,
+      title: `Origen: ${viaje.nombre_origen || 'Origen'}`,
+      color: 'green',
+    };
+    const destino = {
+      latitude: viaje.ubicacion_destino?.coordinates?.[1] || 20.5888,
+      longitude: viaje.ubicacion_destino?.coordinates?.[0] || -100.3899,
+      title: `Destino Final: ${viaje.nombre_destino || 'Destino'}`,
+      color: 'red',
+    };
+
+    // Paradas intermedias: subidas y bajadas de solicitudes aceptadas (para todos)
+    const paradasAceptadas = [];
+    solicitudes.filter(s => s.id_estatus === 3).forEach((s, idx) => {
+      const pName = s.pasajero?.nombre_completo?.split(' ')[0] || `Pasajero ${idx + 1}`;
+      
+      // Si la recogida es diferente al origen general (o si queremos mostrarla siempre)
+      if (s.ubicacion_recogida?.coordinates) {
+        paradasAceptadas.push({
+          latitude: s.ubicacion_recogida.coordinates[1],
+          longitude: s.ubicacion_recogida.coordinates[0],
+          title: `Subida: ${pName}`,
+          color: 'blue',
+        });
+      }
+      
+      // La bajada del pasajero
+      if (s.ubicacion_bajada?.coordinates) {
+        paradasAceptadas.push({
+          latitude: s.ubicacion_bajada.coordinates[1],
+          longitude: s.ubicacion_bajada.coordinates[0],
+          title: `Bajada: ${pName}`,
+          color: 'orange',
+        });
+      }
+    });
+
+    // Si el pasajero actual tiene solicitud aceptada y no está en la lista general por alguna razón
+    const miParada =
+      !isOwner && pasajeroSolicitud?.id_estatus === 3 && pasajeroSolicitud?.ubicacion_bajada?.coordinates && paradasAceptadas.length === 0
+        ? [{
+            latitude: pasajeroSolicitud.ubicacion_bajada.coordinates[1],
+            longitude: pasajeroSolicitud.ubicacion_bajada.coordinates[0],
+            title: 'Tu bajada',
+            color: 'orange',
+          }]
+        : [];
+
+    return [origen, ...paradasAceptadas, ...miParada, destino];
+  }, [viaje, solicitudes, pasajeroSolicitud]);
+
+  // Waypoints para el mapa de solicitud del pasajero (dentro de la card Solicitar Asiento)
+  const requestMapWaypoints = useMemo(() => {
+    if (!viaje) return [];
+    
+    const pts = [];
+    
+    // 1. Siempre mantener el Origen original del conductor
+    pts.push({
+      latitude: viaje.ubicacion_inicio?.coordinates?.[1] || 20.5891,
+      longitude: viaje.ubicacion_inicio?.coordinates?.[0] || -100.4376,
+      title: `Origen: ${viaje.nombre_origen || 'Origen'}`,
+      color: 'green',
+    });
+
+    // 2. Insertar punto de recogida del pasajero como parada (si aplica)
+    if (passengerPickupCoords) {
+      pts.push({
+        latitude: passengerPickupCoords.latitude,
+        longitude: passengerPickupCoords.longitude,
+        title: `Tu subida: ${pasajeroOrigen || 'Mi Origen'}`,
+        color: 'blue',
+      });
+    }
+    
+    // 3. Insertar punto de bajada del pasajero como parada (si aplica)
+    if (passengerDropoffCoords) {
+      pts.push({
+        latitude: passengerDropoffCoords.latitude,
+        longitude: passengerDropoffCoords.longitude,
+        title: `Tu bajada: ${pasajeroDestino || 'Mi Destino'}`,
+        color: 'orange',
+      });
+    }
+    
+    // 4. Siempre mantener el Destino final del conductor
+    pts.push({
+      latitude: viaje.ubicacion_destino?.coordinates?.[1] || 20.5888,
+      longitude: viaje.ubicacion_destino?.coordinates?.[0] || -100.3899,
+      title: `Destino Final: ${viaje.nombre_destino || 'Destino'}`,
+      color: 'red',
+    });
+    
+    return pts;
+  }, [viaje, passengerDropoffCoords, pasajeroDestino, passengerPickupCoords, pasajeroOrigen]);
+
+  // ─── Acciones del pasajero ────────────────────────────────────────────────────
   const handleCreateRequest = async () => {
     if (viaje?.asientos_disponibles < 1) {
       Alert.alert('Sin lugares', 'Este viaje ya no cuenta con asientos disponibles.');
       return;
     }
 
-    if (!pasajeroDestino.trim()) {
-      Alert.alert('Destino requerido', 'Por favor ingresa o selecciona en el mapa el destino al que deseas llegar.');
+    const saleDeUpq = viaje?.nombre_origen?.includes('UPQ');
+
+    // Dependemos únicamente del sentido del viaje (saleDeUpq) para saber qué pedir,
+    // tal como se hace en la UI, para que nunca pida un campo oculto.
+    const requiresOrigen = !saleDeUpq;
+    const requiresDestino = saleDeUpq;
+
+    if (requiresOrigen && !pasajeroOrigen.trim()) {
+      Alert.alert('Origen requerido', 'Por favor ingresa tu punto de partida para recogerte.');
+      return;
+    }
+    
+    if (requiresOrigen && (!origenValidado || !passengerPickupCoords)) {
+      Alert.alert('Origen no válido', 'Por favor selecciona tu origen desde las sugerencias o tócando en el mapa.');
       return;
     }
 
-    const dropoffCoords = passengerDropoffCoords || {
-      latitude: viaje.ubicacion_destino?.coordinates?.[1] || 20.5888,
-      longitude: viaje.ubicacion_destino?.coordinates?.[0] || -100.3899,
+    if (requiresDestino && !pasajeroDestino.trim()) {
+      Alert.alert('Destino requerido', 'Por favor ingresa el destino al que deseas llegar.');
+      return;
+    }
+
+    if (requiresDestino && (!destinoValidado || !passengerDropoffCoords)) {
+      Alert.alert('Destino no válido', 'Por favor selecciona tu destino desde las sugerencias o tócando en el mapa.');
+      return;
+    }
+
+    const finalPickupCoords = requiresOrigen ? passengerPickupCoords : {
+      latitude: viaje.ubicacion_inicio.coordinates[1],
+      longitude: viaje.ubicacion_inicio.coordinates[0]
+    };
+    
+    const finalDropoffCoords = requiresDestino ? passengerDropoffCoords : {
+      latitude: viaje.ubicacion_destino.coordinates[1],
+      longitude: viaje.ubicacion_destino.coordinates[0]
     };
 
-    // Calculate detour distance from trip destination
+    // Calculate passenger distance for dynamic pricing
+    const passengerDistanceKm = getDistanceKm(finalPickupCoords.latitude, finalPickupCoords.longitude, finalDropoffCoords.latitude, finalDropoffCoords.longitude);
+    const calculatedPrice = Math.round(5 + (passengerDistanceKm * 3)); // $5 base + $3 por Km
+
+    // Calculate detour distance from trip destination for driver dashboard
     const tripDestLat = viaje.ubicacion_destino?.coordinates?.[1] || 20.5888;
     const tripDestLon = viaje.ubicacion_destino?.coordinates?.[0] || -100.3899;
-    const detourKm = getDistanceKm(tripDestLat, tripDestLon, dropoffCoords.latitude, dropoffCoords.longitude);
+    const detourKm = getDistanceKm(tripDestLat, tripDestLon, finalDropoffCoords.latitude, finalDropoffCoords.longitude);
     const detourMeters = Math.round(detourKm * 1000);
 
     setActionLoading(true);
@@ -91,17 +260,20 @@ export default function TripDetailScreen({ route, navigation }) {
         id_pasajero: user.id,
         id_metodo_pago: 1, // Efectivo (default)
         id_estatus: 1, // Pendiente
-        ubicacion_recogida: viaje.ubicacion_inicio, // copy start coordinates
+        ubicacion_recogida: {
+          type: 'Point',
+          coordinates: [finalPickupCoords.longitude, finalPickupCoords.latitude],
+        },
         ubicacion_bajada: {
           type: 'Point',
-          coordinates: [dropoffCoords.longitude, dropoffCoords.latitude],
+          coordinates: [finalDropoffCoords.longitude, finalDropoffCoords.latitude],
         },
         desvio_metros: detourMeters,
-        precio: viaje.precio_sugerido || 0.0,
-        notas_adicionales: `Destino: ${pasajeroDestino.trim()}`,
+        precio: calculatedPrice,
+        notas_adicionales: `Origen: ${requiresOrigen ? pasajeroOrigen : 'UPQ'}, Destino: ${requiresDestino ? pasajeroDestino : 'UPQ'}`,
       };
       await crearSolicitud(solData);
-      Alert.alert('Solicitud enviada', 'Tu solicitud con tu destino fue enviada al conductor para su revisión.');
+      Alert.alert('Solicitud enviada', 'Tu solicitud fue enviada al conductor para su revisión.');
       loadData();
     } catch (error) {
       Alert.alert('Error al solicitar', error.displayMessage || 'No se pudo registrar la solicitud.');
@@ -138,6 +310,7 @@ export default function TripDetailScreen({ route, navigation }) {
     );
   };
 
+  // ─── Acciones del conductor ───────────────────────────────────────────────────
   const handleAcceptRequest = async (solId) => {
     setActionLoading(true);
     try {
@@ -208,6 +381,61 @@ export default function TripDetailScreen({ route, navigation }) {
     );
   };
 
+  const handleReportarEventualidad = async () => {
+    Alert.alert(
+      'Reportar Eventualidad',
+      '¿Ocurrió un accidente o factor externo que te impide realizar el viaje? Al reportarlo, se cancelará el viaje sin aplicar sanciones en tu cuenta.',
+      [
+        { text: 'Volver', style: 'cancel' },
+        {
+          text: 'Sí, reportar',
+          style: 'destructive',
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              // Enviar el id_estatus 4 (Cancelado)
+              // Idealmente esto se manda al backend con un campo 'motivo', pero por ahora usamos el endpoint existente
+              await actualizarViaje(viajeId, { id_estatus: 4, notas_adicionales: 'Cancelado por eventualidad externa' });
+              Alert.alert('Eventualidad Reportada', 'El viaje ha sido cancelado exitosamente. No se te aplicarán penalizaciones.');
+              loadData();
+            } catch (err) {
+              Alert.alert('Error', err.displayMessage || 'No se pudo reportar la eventualidad.');
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Calculate dynamic price preview based on what the passenger has selected so far.
+  // This MUST be before any early return to follow the Rules of Hooks.
+  const previewPrice = useMemo(() => {
+    if (!viaje) return null;
+    const tripSaleDeUpq = viaje?.nombre_origen?.includes('UPQ');
+    const tripStartLat = viaje.ubicacion_inicio?.coordinates?.[1] || 20.5891;
+    const tripStartLon = viaje.ubicacion_inicio?.coordinates?.[0] || -100.4376;
+    const tripEndLat = viaje.ubicacion_destino?.coordinates?.[1] || 20.5888;
+    const tripEndLon = viaje.ubicacion_destino?.coordinates?.[0] || -100.3899;
+
+    let pickupLat, pickupLon, dropoffLat, dropoffLon;
+    if (tripSaleDeUpq) {
+      pickupLat = tripStartLat; pickupLon = tripStartLon;
+      if (passengerDropoffCoords) {
+        dropoffLat = passengerDropoffCoords.latitude; dropoffLon = passengerDropoffCoords.longitude;
+      }
+    } else {
+      if (passengerPickupCoords) {
+        pickupLat = passengerPickupCoords.latitude; pickupLon = passengerPickupCoords.longitude;
+      }
+      dropoffLat = tripEndLat; dropoffLon = tripEndLon;
+    }
+    if (!pickupLat || !dropoffLat) return null;
+    const distKm = getDistanceKm(pickupLat, pickupLon, dropoffLat, dropoffLon);
+    return Math.round(5 + distKm * 3);
+  }, [viaje, passengerPickupCoords, passengerDropoffCoords]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -220,6 +448,21 @@ export default function TripDetailScreen({ route, navigation }) {
   const conductorObj = viaje.vehiculo?.conductor;
   const tDriverId = conductorObj?.id_usuario || conductorObj?.usuario?.id;
   const isOwner = tDriverId != null && String(tDriverId) === String(user.id);
+  
+  const saleDeUpq = viaje?.nombre_origen?.includes('UPQ');
+
+  // Determines what a passenger must provide:
+  // - If trip starts at UPQ: passenger only sets their DROP-OFF (destination)
+  // - If trip ends at UPQ: passenger only sets their PICK-UP (origin)
+  // In both cases, only ONE field is ever shown.
+  const singleFieldLabel = saleDeUpq ? 'Agregar destino' : 'Agregar punto de recogida';
+  const singleFieldPlaceholder = saleDeUpq
+    ? 'Ej. Plaza del Parque, Av. Constituyentes...'
+    : 'Ej. Tu colonia o lugar de partida';
+  const singleFieldIcon = saleDeUpq ? 'location-sharp' : 'navigate-circle-outline';
+  const singleFieldIconColor = saleDeUpq ? COLORS.danger : COLORS.primary;
+  const singleFieldValue = saleDeUpq ? pasajeroDestino : pasajeroOrigen;
+  const singleFieldValidado = saleDeUpq ? destinoValidado : origenValidado;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -279,36 +522,20 @@ export default function TripDetailScreen({ route, navigation }) {
             )}
           </View>
 
-          {/* MAPA DE LA RUTA */}
-          <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Ruta en el Mapa</Text>
+          {/* MAPA PRINCIPAL DE LA RUTA — incluye paradas aceptadas dinámicamente */}
+          <View style={styles.mapHeaderRow}>
+            <Text style={[styles.sectionTitle, { marginTop: 16, marginBottom: 0 }]}>Ruta en el Mapa</Text>
+            {mainMapWaypoints.length > 2 && (
+              <View style={styles.stopsBadge}>
+                <Ionicons name="location" size={12} color="#FFF" />
+                <Text style={styles.stopsBadgeText}>{mainMapWaypoints.length - 2} parada{mainMapWaypoints.length - 2 !== 1 ? 's' : ''}</Text>
+              </View>
+            )}
+          </View>
           <MapaRutas
-            interactive={!isOwner && !pasajeroSolicitud}
+            interactive={false}
             height={220}
-            waypoints={[
-              {
-                latitude: viaje.ubicacion_inicio?.coordinates?.[1] || 20.5891,
-                longitude: viaje.ubicacion_inicio?.coordinates?.[0] || -100.4376,
-                title: `Origen: ${viaje.nombre_origen || 'Origen'}`,
-                color: 'green',
-              },
-              ...(passengerDropoffCoords ? [{
-                latitude: passengerDropoffCoords.latitude,
-                longitude: passengerDropoffCoords.longitude,
-                title: `Tu bajada: ${pasajeroDestino || 'Mi Destino'}`,
-                color: 'orange',
-              }] : []),
-              {
-                latitude: viaje.ubicacion_destino?.coordinates?.[1] || 20.5888,
-                longitude: viaje.ubicacion_destino?.coordinates?.[0] || -100.3899,
-                title: `Destino Final: ${viaje.nombre_destino || 'Destino'}`,
-                color: 'red',
-              },
-            ]}
-            onMapPress={(coord) => {
-              if (!isOwner && !pasajeroSolicitud) {
-                setPassengerDropoffCoords(coord);
-              }
-            }}
+            waypoints={mainMapWaypoints}
           />
         </Card>
 
@@ -375,6 +602,15 @@ export default function TripDetailScreen({ route, navigation }) {
                 </Text>
               )}
             </View>
+            {(viaje.id_estatus === 1 || viaje.id_estatus === 2) && (
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#475569', marginTop: 12 }]}
+                onPress={handleReportarEventualidad}
+              >
+                <Ionicons name="warning-outline" size={16} color="#FFF" />
+                <Text style={styles.actionBtnText}>Reportar Eventualidad (Factor externo)</Text>
+              </TouchableOpacity>
+            )}
           </Card>
         )}
 
@@ -391,7 +627,7 @@ export default function TripDetailScreen({ route, navigation }) {
                 const dropLon = item.ubicacion_bajada?.coordinates?.[0];
                 const tripDestLat = viaje.ubicacion_destino?.coordinates?.[1] || 20.5888;
                 const tripDestLon = viaje.ubicacion_destino?.coordinates?.[0] || -100.3899;
-                
+
                 const detourKm = dropLat && dropLon ? getDistanceKm(tripDestLat, tripDestLon, dropLat, dropLon) : (parseFloat(item.desvio_metros || 0) / 1000);
                 const detourMin = Math.round(detourKm * 2.5); // Estimate ~2.5 mins per km
 
@@ -419,15 +655,65 @@ export default function TripDetailScreen({ route, navigation }) {
                       <StatusBadge statusId={item.id_estatus} type="solicitud" />
                     </View>
 
-                    <View style={styles.destDetourBox}>
+                    {/* Price passenger will pay */}
+                    {(() => {
+                      const priceToPay = item.precio ? parseFloat(item.precio).toFixed(2) : null;
+                      return priceToPay && (
+                        <View style={styles.passengerPriceBox}>
+                          <Ionicons name="cash" size={14} color={COLORS.success} />
+                          <Text style={styles.passengerPriceText}>
+                            Aportación estimada: <Text style={{ fontWeight: 'bold' }}>${priceToPay} MXN</Text>
+                          </Text>
+                        </View>
+                      );
+                    })()}
+
+                    <TouchableOpacity
+                      style={styles.destDetourBox}
+                      activeOpacity={0.7}
+                      onPress={() => setExpandedMaps(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                    >
                       <Ionicons name="location" size={16} color={COLORS.primary} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.destText}>Destino solicitado: <Text style={{ fontWeight: 'bold' }}>{reqDestName}</Text></Text>
                         <Text style={styles.detourText}>
                           📍 Desvío estimado: {detourKm > 0.1 ? `+${detourKm.toFixed(1)} km (~${detourMin} min extra)` : 'En la ruta directa (0 km desvío)'}
                         </Text>
+                        <Text style={{ fontSize: 11, color: COLORS.primary, marginTop: 4, fontWeight: 'bold' }}>
+                          {expandedMaps[item.id] ? 'Ocultar mapa' : 'Ver ruta en mapa'}
+                        </Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
+
+                    {expandedMaps[item.id] && (
+                      <View style={{ marginTop: 10, borderRadius: 8, overflow: 'hidden' }}>
+                        <MapaRutas
+                          interactive={false}
+                          height={160}
+                          waypoints={[
+                            { latitude: viaje.ubicacion_inicio?.coordinates?.[1] || 20.5891, longitude: viaje.ubicacion_inicio?.coordinates?.[0] || -100.4376, title: 'Origen Conductor', color: 'green' },
+                            ...(item.ubicacion_recogida?.coordinates ? [{ latitude: item.ubicacion_recogida.coordinates[1], longitude: item.ubicacion_recogida.coordinates[0], title: 'Subida Pasajero', color: 'blue' }] : []),
+                            ...(item.ubicacion_bajada?.coordinates ? [{ latitude: item.ubicacion_bajada.coordinates[1], longitude: item.ubicacion_bajada.coordinates[0], title: 'Bajada Pasajero', color: 'orange' }] : []),
+                            { latitude: tripDestLat, longitude: tripDestLon, title: 'Destino Final', color: 'red' }
+                          ]}
+                        />
+                      </View>
+                    )}
+
+                    {/* AI RECOMMENDATION BOX */}
+                    {aiEvaluations[item.id] && (
+                      <View style={[styles.aiBox, aiEvaluations[item.id].recommendation === 'ACCEPT' ? styles.aiAccept : styles.aiReject]}>
+                        <Ionicons name={aiEvaluations[item.id].recommendation === 'ACCEPT' ? 'checkmark-circle' : 'warning'} size={18} color={aiEvaluations[item.id].recommendation === 'ACCEPT' ? '#065F46' : '#991B1B'} />
+                        <View style={{ flex: 1, marginLeft: 8 }}>
+                          <Text style={[styles.aiTitle, { color: aiEvaluations[item.id].recommendation === 'ACCEPT' ? '#065F46' : '#991B1B' }]}>
+                            Evaluación IA: {Math.round(aiEvaluations[item.id].score * 100)}% de conveniencia
+                          </Text>
+                          <Text style={[styles.aiSub, { color: aiEvaluations[item.id].recommendation === 'ACCEPT' ? '#065F46' : '#991B1B' }]}>
+                            {aiEvaluations[item.id].recommendation === 'ACCEPT' ? 'Recomendado: Aceptar (buen beneficio)' : 'Recomendado: Rechazar (desvío excesivo para la tarifa)'}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
 
                     {item.id_estatus === 1 && viaje.id_estatus === 1 && (
                       <View style={styles.reqActionRow}>
@@ -499,19 +785,99 @@ export default function TripDetailScreen({ route, navigation }) {
               </Card>
             ) : (
               viaje.id_estatus === 1 && (
-                <Card style={{ padding: 16 }}>
+                <Card style={styles.requestFormCard}>
                   <Text style={styles.sectionTitle}>Solicitar Asiento</Text>
-                  <CustomInput
-                    label="¿A qué destino deseas llegar?"
-                    placeholder="Ej. Plaza del Parque, Av. Constituyentes, etc."
-                    value={pasajeroDestino}
-                    onChangeText={setPasajeroDestino}
+
+                  {/* ─── SINGLE LOCATION FIELD ─── */}
+                  <LocationSearchInput
+                    label={singleFieldLabel}
+                    placeholder={singleFieldPlaceholder}
+                    value={singleFieldValue}
+                    onChangeText={(text) => {
+                      if (saleDeUpq) {
+                        setPasajeroDestino(text);
+                        setDestinoValidado(false);
+                        setPassengerDropoffCoords(null);
+                      } else {
+                        setPasajeroOrigen(text);
+                        setOrigenValidado(false);
+                        setPassengerPickupCoords(null);
+                      }
+                    }}
+                    iconName={singleFieldIcon}
+                    iconColor={singleFieldIconColor}
+                    onSelectLocation={(loc) => {
+                      if (saleDeUpq) {
+                        setPasajeroDestino(loc.address || loc.name);
+                        setPassengerDropoffCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                        setDestinoValidado(true);
+                      } else {
+                        setPasajeroOrigen(loc.address || loc.name);
+                        setPassengerPickupCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                        setOrigenValidado(true);
+                      }
+                    }}
+                    style={{ zIndex: 30 }}
                   />
-                  <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 12 }}>
-                    💡 Tip: También puedes tocar en el mapa arriba para marcar el punto exacto de tu bajada.
-                  </Text>
+
+                  {/* Validation status */}
+                  {singleFieldValue.length > 0 && (
+                    <View style={[styles.validationRow, singleFieldValidado ? styles.validationOk : styles.validationWarn]}>
+                      <Ionicons
+                        name={singleFieldValidado ? 'checkmark-circle' : 'alert-circle-outline'}
+                        size={15}
+                        color={singleFieldValidado ? COLORS.success : '#D97706'}
+                      />
+                      <Text style={[styles.validationText, { color: singleFieldValidado ? COLORS.success : '#D97706' }]}>
+                        {singleFieldValidado ? 'Ubicación verificada' : 'Selecciona una sugerencia o toca el mapa'}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Map hint */}
+                  <View style={styles.passengerMapHeader}>
+                    <Ionicons name="map-outline" size={15} color={COLORS.textSecondary} />
+                    <Text style={styles.passengerMapLabel}>
+                      {saleDeUpq
+                        ? 'Toca el mapa para fijar tu destino de bajada'
+                        : 'Toca el mapa para fijar tu punto de recogida'}
+                    </Text>
+                  </View>
+
+                  {/* Interactive map */}
+                  <MapaRutas
+                    interactive={true}
+                    height={200}
+                    waypoints={requestMapWaypoints}
+                    onMapPress={(coord) => {
+                      if (saleDeUpq) {
+                        setPassengerDropoffCoords({ latitude: coord.latitude, longitude: coord.longitude });
+                        if (coord.address) setPasajeroDestino(coord.address);
+                        setDestinoValidado(true);
+                      } else {
+                        setPassengerPickupCoords({ latitude: coord.latitude, longitude: coord.longitude });
+                        if (coord.address) setPasajeroOrigen(coord.address);
+                        setOrigenValidado(true);
+                      }
+                    }}
+                  />
+
+                  {/* Dynamic price preview for passenger */}
+                  {previewPrice != null && (
+                    <View style={styles.pricePreviewBox}>
+                      <Ionicons name="cash-outline" size={18} color={COLORS.success} />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={styles.pricePreviewTitle}>Aportación estimada</Text>
+                        <Text style={styles.pricePreviewValue}>${previewPrice} MXN</Text>
+                        <Text style={styles.pricePreviewNote}>
+                          Calculada según la distancia de tu recorrido ($5 base + $3/km)
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
                   <PrimaryButton
-                    title={viaje.asientos_disponibles > 0 ? "Enviar Solicitud al Conductor" : "Sin lugares disponibles"}
+                    title={viaje.asientos_disponibles > 0 ? 'Enviar Solicitud al Conductor' : 'Sin lugares disponibles'}
                     onPress={handleCreateRequest}
                     style={[styles.requestBtn, viaje.asientos_disponibles <= 0 && styles.disabledBtn]}
                     disabled={viaje.asientos_disponibles <= 0}
@@ -610,6 +976,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
     fontWeight: '500',
+  },
+  // Map header with stops badge
+  mapHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  stopsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 3,
+  },
+  stopsBadgeText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   sectionTitle: {
     fontSize: 16,
@@ -783,8 +1171,51 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 12,
   },
+  // Request form card
+  requestFormCard: {
+    padding: 16,
+  },
+  // Validation indicator
+  validationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginBottom: 12,
+    marginTop: -6,
+  },
+  validationOk: {
+    backgroundColor: '#D1FAE5',
+  },
+  validationWarn: {
+    backgroundColor: '#FEF3C7',
+  },
+  validationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  // Passenger map section
+  passengerMapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  passengerMapLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  clearMapBtn: {
+    padding: 2,
+  },
   requestBtn: {
-    marginVertical: 4,
+    marginTop: 12,
+    marginBottom: 4,
   },
   disabledBtn: {
     backgroundColor: '#CCCCCC',
@@ -829,5 +1260,115 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  aiBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  aiAccept: {
+    backgroundColor: '#D1FAE5',
+    borderWidth: 1,
+    borderColor: '#34D399',
+  },
+  aiReject: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#F87171',
+  },
+  aiTitle: {
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  aiSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  aiBtn: {
+    backgroundColor: '#6366F1', // Indigo
+  },
+  aiBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  selectorModeRow: {
+    marginBottom: 8,
+  },
+  selectorLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+    fontWeight: '500',
+  },
+  selectorBtns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  modeBtnActive: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#3B82F6',
+  },
+  modeBtnText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  modeBtnTextActive: {
+    color: '#1D4ED8',
+  },
+  pricePreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  pricePreviewTitle: {
+    fontSize: 12,
+    color: '#166534',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  pricePreviewValue: {
+    fontSize: 20,
+    color: '#15803D',
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  pricePreviewNote: {
+    fontSize: 11,
+    color: '#166534',
+    lineHeight: 14,
+  },
+  passengerPriceBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
+    gap: 6,
+  },
+  passengerPriceText: {
+    fontSize: 12,
+    color: '#166534',
   },
 });

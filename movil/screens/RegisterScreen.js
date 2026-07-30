@@ -22,13 +22,30 @@ export default function RegisterScreen({ navigation }) {
       return;
     }
 
-    if (matricula.length !== 9) {
-      Alert.alert('Matrícula inválida', 'La matrícula debe ser de 9 dígitos.');
+    const trimmedNombre = nombre.trim();
+    if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/.test(trimmedNombre)) {
+      Alert.alert('Nombre inválido', 'El nombre solo debe contener letras y espacios.');
       return;
     }
 
-    if (!email.endsWith('@upq.edu.mx')) {
-      Alert.alert('Correo inválido', 'El correo debe ser institucional con terminación @upq.edu.mx');
+    if (trimmedNombre.length > 50) {
+      Alert.alert('Nombre demasiado largo', 'El nombre no puede exceder los 50 caracteres.');
+      return;
+    }
+
+    if (trimmedNombre.split(/\s+/).length < 2) {
+      Alert.alert('Nombre incompleto', 'Debes ingresar al menos un nombre y un apellido.');
+      return;
+    }
+
+    if (matricula.length !== 9) {
+      Alert.alert('Matrícula inválida', 'La matrícula debe ser exactamente de 9 dígitos.');
+      return;
+    }
+
+    const correoEsperado = `${matricula}@upq.edu.mx`;
+    if (email.toLowerCase() !== correoEsperado.toLowerCase()) {
+      Alert.alert('Correo inválido', `El correo institucional no coincide con tu matrícula. Se esperaba: ${correoEsperado}`);
       return;
     }
 
@@ -91,11 +108,13 @@ export default function RegisterScreen({ navigation }) {
             placeholder="Ej. 123456789"
             keyboardType="numeric"
             value={matricula}
+            maxLength={9}
             onChangeText={(txt) => {
               setMatricula(txt);
-              // Prefiltrar sugerencia de correo institucional para ahorrar tiempo
-              if (txt.length === 9 && !email) {
+              if (txt.length > 0) {
                 setEmail(`${txt}@upq.edu.mx`);
+              } else {
+                setEmail('');
               }
             }}
           />
@@ -106,12 +125,13 @@ export default function RegisterScreen({ navigation }) {
             keyboardType="email-address"
             value={email}
             onChangeText={setEmail}
+            editable={false}
           />
 
           <CustomInput
             label="Contraseña"
             placeholder="Mínimo 8 caracteres"
-            secureTextEntry
+            isPassword={true}
             value={password}
             onChangeText={setPassword}
           />
@@ -119,7 +139,7 @@ export default function RegisterScreen({ navigation }) {
           <CustomInput
             label="Confirmar contraseña"
             placeholder="Repite la contraseña"
-            secureTextEntry
+            isPassword={true}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
           />

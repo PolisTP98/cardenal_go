@@ -67,7 +67,7 @@ export default function LoginScreen({ navigation }) {
           <CustomInput
             label="Contraseña"
             placeholder="********"
-            secureTextEntry
+            isPassword={true}
             value={password}
             onChangeText={setPassword}
           />

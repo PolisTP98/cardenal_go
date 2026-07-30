@@ -12,14 +12,20 @@ import LocationSearchInput from '../components/LocationSearchInput';
 export default function SearchTripScreen({ navigation }) {
   const [origen, setOrigen] = useState('UPQ');
   const [destino, setDestino] = useState('');
+  const [origenValid, setOrigenValid] = useState(true);
+  const [destinoValid, setDestinoValid] = useState(false);
   
   // Prefill with today's date formatted as YYYY-MM-DD
   const todayStr = new Date().toISOString().split('T')[0];
   const [fecha, setFecha] = useState(todayStr);
 
   const handleSearch = () => {
-    if (!destino) {
-      Alert.alert('Destino requerido', 'Por favor ingresa un destino para buscar viajes.');
+    if (!origen || !destino) {
+      Alert.alert('Campos requeridos', 'Por favor ingresa un origen y un destino para buscar viajes.');
+      return;
+    }
+    if (!origenValid || !destinoValid) {
+      Alert.alert('Ubicación inválida', 'Por favor selecciona una ubicación sugerida para tu origen y destino.');
       return;
     }
 
@@ -47,22 +53,34 @@ export default function SearchTripScreen({ navigation }) {
               label="Punto de Origen"
               placeholder="Ej. UPQ o dirección de salida"
               value={origen}
-              onChangeText={setOrigen}
+              onChangeText={(txt) => {
+                setOrigen(txt);
+                setOrigenValid(false);
+              }}
               iconName="navigate-circle-outline"
               iconColor="green"
               style={{ zIndex: 20 }}
-              onSelectLocation={(loc) => setOrigen(loc.address || loc.name)}
+              onSelectLocation={(loc) => {
+                setOrigen(loc.address || loc.name);
+                setOrigenValid(true);
+              }}
             />
 
             <LocationSearchInput
               label="Destino Principal"
               placeholder="¿A qué colonia o lugar vas?"
               value={destino}
-              onChangeText={setDestino}
+              onChangeText={(txt) => {
+                setDestino(txt);
+                setDestinoValid(false);
+              }}
               iconName="location-sharp"
               iconColor="red"
               style={{ zIndex: 10 }}
-              onSelectLocation={(loc) => setDestino(loc.address || loc.name)}
+              onSelectLocation={(loc) => {
+                setDestino(loc.address || loc.name);
+                setDestinoValid(true);
+              }}
             />
 
           <CustomInput
