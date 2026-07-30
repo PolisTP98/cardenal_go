@@ -19,7 +19,7 @@ from data.models import(
 from security.auth import hashPassword, env_settings
 
 
-SUPERADMIN_PASSWORD = getattr(env_settings, "superadmin_password_temporal_super_secreta", None) or os.getenv("SUPERADMIN_PASSWORD", "superadmin_password_temporal_super_secreta")
+SUPERADMIN_PASSWORD = getattr(env_settings, "superadmin_password", None) or os.getenv("SUPERADMIN_PASSWORD")
 
 def poblarBaseDeDatos(db: Session):
     roles_data = [

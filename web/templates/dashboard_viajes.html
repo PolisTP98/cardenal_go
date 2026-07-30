@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard de viajes</h1>
+</div>
+
+<div class="row mb-4">
+    <div class="col">
+        <div class="card text-white bg-primary text-center">
+            <div class="card-body">
+                <h6 class="card-title">Total de viajes</h6>
+                <h3 class="card-text">{{ total_viajes }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-white bg-info text-center">
+            <div class="card-body">
+                <h6 class="card-title">Programados</h6>
+                <h3 class="card-text">{{ count_programado }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-white bg-warning text-center">
+            <div class="card-body">
+                <h6 class="card-title">En curso</h6>
+                <h3 class="card-text">{{ count_en_curso }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-white bg-success text-center">
+            <div class="card-body">
+                <h6 class="card-title">Finalizados</h6>
+                <h3 class="card-text">{{ count_finalizado }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-white bg-danger text-center">
+            <div class="card-body">
+                <h6 class="card-title">Cancelados</h6>
+                <h3 class="card-text">{{ count_cancelado }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row" id="dashboard-container" data-type="viajes" data-conteo='{{ conteo_estatus_json | safe }}' data-registros='{{ registros_json | safe }}'>
+    <div class="col-md-5 mb-4">
+        <div class="card h-100">
+            <div class="card-header fw-bold">Distribución de viajes por estatus</div>
+            <div class="card-body d-flex justify-content-center align-items-center">
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold">Flujo de viajes en el tiempo</span>
+                <select id="categoriaFilter" class="form-select form-select-sm w-auto">
+                    <option value="Todos">Todos los estatus</option>
+                    <option value="Programado">Programado</option>
+                    <option value="En curso">En curso</option>
+                    <option value="Finalizado">Finalizado</option>
+                    <option value="Cancelado">Cancelado</option>
+                </select>
+            </div>
+            <div class="card-body">
+                <canvas id="lineChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

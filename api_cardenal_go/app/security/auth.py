@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 env_settings = Settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes = ["bcrypt"], deprecated = "auto")
 api_key_scheme = APIKeyHeader(name = "X-API-Key", auto_error = False)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "api/usu/token")
 rate_limiter = Limiter(key_func = get_remote_address)
@@ -86,6 +86,6 @@ def verifyResourceOwnership(current_user_id: str, resource_owner_id: str, is_adm
     if str(current_user_id) != str(resource_owner_id) and not is_admin:
         raise HTTPException(
             status_code = status.HTTP_403_FORBIDDEN,
-            detail = "Acceso denegado: No tienes permisos sobre este recurso"
+            detail = "No tienes permisos sobre este recurso"
         )
     return True

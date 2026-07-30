@@ -334,8 +334,13 @@ class VehiculoCreate(BaseModel):
     placa: str = Field(..., max_length = 15)
     color: str = Field(..., max_length = 30)
     modelo: str = Field(..., max_length = 50)
+<<<<<<< Updated upstream
     anio: int
     fotos: Any = Field(...)
+=======
+    anio: int = Field(..., gt=1990, le = datetime.now().year + 1)
+    fotos: Dict[str, Any] = Field(..., min_length = 1)
+>>>>>>> Stashed changes
 
 class VehiculoUpdate(BaseModel):
     color: Optional[str] = Field(None, max_length = 30)

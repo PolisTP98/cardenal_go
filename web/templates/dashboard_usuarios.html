@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard usuarios</h1>
+</div>
+
+<div class="row mb-4">
+    <div class="col">
+        <div class="card text-white bg-primary text-center">
+            <div class="card-body">
+                <h6 class="card-title">Total de usuarios</h6>
+                <h3 class="card-text">{{ total_usuarios }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-white bg-success text-center">
+            <div class="card-body">
+                <h6 class="card-title">Pasajeros</h6>
+                <h3 class="card-text">{{ count_pasajero }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-white bg-info text-center">
+            <div class="card-body">
+                <h6 class="card-title">Conductores</h6>
+                <h3 class="card-text">{{ count_conductor }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card text-white bg-warning text-center">
+            <div class="card-body">
+                <h6 class="card-title">Administradores</h6>
+                <h3 class="card-text">{{ count_admin }}</h3>
+            </div>
+        </div>
+    </div>
+    {% if rol == 'Superadministrador' %}
+        <div class="col">
+            <div class="card text-white bg-dark text-center">
+                <div class="card-body">
+                    <h6 class="card-title">Superadministradores</h6>
+                    <h3 class="card-text">{{ count_superadmin }}</h3>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<div class="row" id="dashboard-container" data-type="usuarios" data-conteo='{{ conteo_roles_json | safe }}' data-registros='{{ registros_json | safe }}'>
+    <div class="col-md-5 mb-4">
+        <div class="card h-100">
+            <div class="card-header fw-bold">Distribución de usuarios por rol</div>
+            <div class="card-body d-flex justify-content-center align-items-center">
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold">Registro de usuarios en el tiempo</span>
+                <select id="categoriaFilter" class="form-select form-select-sm w-auto">
+                    <option value="Todos">Todos los roles</option>
+                    <option value="Pasajero">Pasajero</option>
+                    <option value="Conductor">Conductor</option>
+                    <option value="Administrador">Administrador</option>
+                    {% if rol == 'Superadministrador' %}
+                        <option value="Superadministrador">Superadministrador</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="card-body">
+                <canvas id="lineChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

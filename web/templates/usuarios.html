@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Gestión de usuarios</h2>
+<table class="table table-striped mt-3">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Nombre completo</th>
+            <th>Matrícula</th>
+            <th>Correo institucional</th>
+            <th>Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for u in usuarios %}
+        <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.nombre_completo }}</td>
+            <td>{{ u.matricula }}</td>
+            <td>{{ u.correo_institucional }}</td>
+            <td>
+                {% if rol == 'Superadministrador' %}
+                <form action="{{ url_for('eliminar_usuario', id=u.id) }}" method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar a este usuario?');">
+                    <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

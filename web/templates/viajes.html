@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Visualización de viajes</h2>
+<table class="table table-striped mt-3">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Vehículo ID</th>
+            <th>Estatus</th>
+            <th>Fecha</th>
+            <th>Asientos Totales</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for v in viajes %}
+        <tr>
+            <td>{{ v.id }}</td>
+            <td>{{ v.id_vehiculo }}</td>
+            <td>{{ v.id_estatus }}</td>
+            <td>{{ v.fecha }}</td>
+            <td>{{ v.asientos_totales }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
