@@ -38,6 +38,14 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
         raise HTTPException(status_code = 404, detail = "Vehículo o conductor asociado no encontrado")
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
     verifyResourceOwnership(payload.get("sub"), str(vehiculo.conductor.id_usuario), is_admin)
+    
+    viaje_activo = db.query(Viaje).join(Vehiculo).filter(
+        Vehiculo.id_conductor == vehiculo.id_conductor,
+        Viaje.id_estatus.in_([1, 2])
+    ).first()
+    if viaje_activo:
+        raise HTTPException(status_code = 400, detail = "Ya tienes un viaje programado. Debes finalizarlo o cancelarlo antes de crear uno nuevo.")
+
     datos_viaje = viaje_in.model_dump()
     datos_viaje["asientos_disponibles"] = viaje_in.asientos_totales
     # GeoPoint.coordinates = [longitude, latitude]
@@ -55,6 +63,8 @@ def obtenerViajes(
     limit: int = 100,
     id_estatus: Optional[int] = Query(None, description="Filtrar por estatus (1=Programado, 2=En curso)"),
     fecha: Optional[str] = Query(None, description="Filtrar por fecha YYYY-MM-DD"),
+    lat_destino: Optional[float] = Query(None, description="Latitud del destino del pasajero"),
+    lng_destino: Optional[float] = Query(None, description="Longitud del destino del pasajero"),
     db: Session = Depends(getDB),
     payload: dict = Depends(verifyToken)
 ):
@@ -73,6 +83,14 @@ def obtenerViajes(
         query = query.filter(Viaje.id_estatus == id_estatus)
     if fecha:
         query = query.filter(Viaje.fecha == fecha)
+
+    # Filtro geoespacial: solo viajes cuyo destino esté a <= 1 km del punto solicitado
+    if lat_destino is not None and lng_destino is not None:
+        punto_pasajero = func.ST_SetSRID(func.ST_MakePoint(lng_destino, lat_destino), 4326)
+        query = query.filter(
+            func.ST_DistanceSphere(Viaje.ubicacion_destino, punto_pasajero) <= 1000
+        )
+
     viajes = query.offset(skip).limit(limit).all()
     return viajes
 

@@ -2,7 +2,7 @@
 # | IMPORTAR MÓDULOS NECESARIOS |
 # -------------------------------
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, Form, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -18,6 +18,7 @@ from security.auth import(
     verifyResourceOwnership
 )
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF
+from utils.imagenes import guardarImagen, eliminarImagen, RUTA_CONDUCTORES, RUTA_VEHICULOS, RUTA_PASAJEROS
 
 
 # ---------------------------------------
@@ -205,6 +206,38 @@ def actualizarUsuario(
     db.refresh(usuario)
     return usuario
 
+@router.patch("/me/foto-perfil", response_model = schemas.UsuarioResponse, summary = "Actualizar foto de perfil del usuario autenticado")
+async def actualizarFotoPerfil(
+    foto: UploadFile = File(...),
+    db: Session = Depends(getDB),
+    payload: dict = Depends(verifyToken)
+):
+    user_id = payload.get("sub")
+    usuario = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+
+    # Determinar carpeta segun el rol del usuario
+    print(f"[FOTO-PERFIL] Actualizando foto de perfil del usuario {user_id} ({payload.get('role')})")
+    carpeta = RUTA_CONDUCTORES if payload.get("role") == "Conductor" else RUTA_PASAJEROS
+
+    # Guardar nueva imagen
+    nombre_base = f"perfil_usuario_{user_id}"
+    ruta_relativa = await guardarImagen(foto, carpeta, nombre_base)
+    print(f"[FOTO-PERFIL] Imagen guardada en: {ruta_relativa}")
+
+    # Eliminar foto anterior si no es la imagen por defecto
+    foto_anterior = usuario.url_foto_perfil
+    if foto_anterior and foto_anterior != "cardenal_upq.png" and not foto_anterior.startswith("http"):
+        eliminarImagen(foto_anterior)
+        print(f"[FOTO-PERFIL] Foto anterior eliminada: {foto_anterior}")
+
+    usuario.url_foto_perfil = ruta_relativa
+    db.commit()
+    db.refresh(usuario)
+    print(f"[FOTO-PERFIL] Foto de perfil actualizada correctamente para usuario {user_id}")
+    return usuario
+
 @router.delete("/{usuario_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar usuario por ID")
 def eliminarUsuario(
     usuario_id: int, 
@@ -223,27 +256,60 @@ def eliminarUsuario(
 # ------------------------------------
 
 @router.post("/conductores", response_model = schemas.ConductorResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar datos de conductor")
-def registrarConductor(
-    conductor_in: schemas.ConductorCreate,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
+async def registrarConductor(
+    id_usuario:              int            = Form(...),
+    telefono:                str            = Form(...),
+    licencia_conducir:       str            = Form(...),
+    clabe_interbancaria:     Optional[str]  = Form(None),
+    nombre_banco:            Optional[str]  = Form(None),
+    nombre_titular_cuenta:   Optional[str]  = Form(None),
+    foto_perfil:             UploadFile     = File(..., description = "Fotografía obligatoria del rostro del conductor"),
+    db:                      Session        = Depends(getDB),
+    payload:                 dict           = Depends(verifyToken)
 ):
-    existe = db.query(Conductor).filter(Conductor.id_usuario == conductor_in.id_usuario).first()
+    # 1. Guardar foto de rostro en disco
+    ruta_foto_perfil = await guardarImagen(
+        archivo          = foto_perfil,
+        carpeta_destino  = RUTA_CONDUCTORES,
+        nombre_base      = f"conductor_{id_usuario}"
+    )
+
+    # 2. Actualizar foto de perfil del Usuario
+    usuario = db.query(Usuario).filter(Usuario.id == id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+    usuario.url_foto_perfil = ruta_foto_perfil
+
+    # 3. Construir datos del conductor (sin url_foto_perfil, ya va en Usuario)
+    datos_conductor = {
+        "id_usuario":           id_usuario,
+        "telefono":             telefono,
+        "licencia_conducir":    licencia_conducir,
+        "url_foto_ine":         "ine_placeholder.png",
+        "clabe_interbancaria":  clabe_interbancaria,
+        "nombre_banco":         nombre_banco,
+        "nombre_titular_cuenta": nombre_titular_cuenta,
+    }
+    # Limpiar campos None para no sobrescribir valores existentes
+    datos_conductor = {k: v for k, v in datos_conductor.items() if v is not None}
+
+    # 4. Crear o actualizar registro de conductor
+    existe = db.query(Conductor).filter(Conductor.id_usuario == id_usuario).first()
     if existe:
-        # Si ya existe perfil de conductor, actualizar sus datos en lugar de fallar con 409
-        for key, value in conductor_in.model_dump(exclude_unset = True).items():
+        for key, value in datos_conductor.items():
             setattr(existe, key, value)
-        rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == conductor_in.id_usuario).first()
+        rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == id_usuario).first()
         if rol_usuario:
             rol_usuario.id_rol = 2
         db.commit()
         db.refresh(existe)
         return existe
-    nuevo_conductor = Conductor(**conductor_in.model_dump())
+
+    nuevo_conductor = Conductor(**datos_conductor)
     db.add(nuevo_conductor)
     db.flush()
     # Actualizar rol a Conductor (id_rol=2)
-    rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == conductor_in.id_usuario).first()
+    rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == id_usuario).first()
     if rol_usuario:
         rol_usuario.id_rol = 2
     db.commit()
@@ -314,18 +380,45 @@ def eliminarConductor(conductor_id: int, db: Session = Depends(getDB), payload: 
 
 @router.post("/vehiculos", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo")
 @router.post("/vehiculos/", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo", include_in_schema = False)
-def crearVehiculo(vehiculo_in: schemas.VehiculoCreate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    conductor = db.query(Conductor).filter(Conductor.id == vehiculo_in.id_conductor).first()
+async def crearVehiculo(
+    id_conductor: int           = Form(...),
+    placa:        str           = Form(...),
+    color:        str           = Form(...),
+    modelo:       str           = Form(...),
+    anio:         int           = Form(...),
+    fotos:        List[UploadFile] = File(..., description = "Mínimo 1 fotografía del vehículo"),
+    db:           Session       = Depends(getDB),
+    payload:      dict          = Depends(verifyToken)
+):
+    if not fotos or len(fotos) == 0:
+        raise HTTPException(status_code = 422, detail = "Debes proporcionar al menos una fotografía del vehículo.")
+
+    conductor = db.query(Conductor).filter(Conductor.id == id_conductor).first()
     if not conductor:
-        # Fallback: intentar buscar por id_usuario si id_conductor no coincide directamente
-        conductor = db.query(Conductor).filter(Conductor.id_usuario == vehiculo_in.id_conductor).first()
+        conductor = db.query(Conductor).filter(Conductor.id_usuario == id_conductor).first()
     if not conductor:
         raise HTTPException(status_code = 404, detail = "El conductor especificado no existe")
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
     verifyResourceOwnership(payload.get("sub"), str(conductor.id_usuario), is_admin)
-    datos_vehiculo = vehiculo_in.model_dump()
-    datos_vehiculo["id_conductor"] = conductor.id
-    nuevo_vehiculo = Vehiculo(**datos_vehiculo)
+
+    # Guardar cada foto en disco y recolectar rutas relativas
+    rutas_fotos = []
+    for idx, foto in enumerate(fotos):
+        ruta = await guardarImagen(
+            archivo         = foto,
+            carpeta_destino = RUTA_VEHICULOS,
+            nombre_base     = f"vehiculo_{conductor.id}_{idx}"
+        )
+        rutas_fotos.append(ruta)
+
+    nuevo_vehiculo = Vehiculo(
+        id_conductor = conductor.id,
+        placa        = placa.upper(),
+        color        = color,
+        modelo       = modelo,
+        anio         = anio,
+        fotos        = rutas_fotos
+    )
     db.add(nuevo_vehiculo)
     db.commit()
     db.refresh(nuevo_vehiculo)

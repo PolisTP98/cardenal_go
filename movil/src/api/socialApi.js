@@ -79,12 +79,26 @@ export const getMensajesChat = async (chatId, skip = 0, limit = 50) => {
 };
 
 // Enviar mensaje
-export const enviarMensaje = async (chatId, idEmisor, idReceptor, contenido) => {
-  const r = await apiClient.post('/api/soc/mensajes', {
-    id_chat: chatId,
-    id_emisor: idEmisor,
-    id_receptor: idReceptor,
-    contenido,
+export const enviarMensaje = async (chatId, idEmisor, idReceptor, contenido, imagen) => {
+  const formData = new FormData();
+  formData.append('id_chat', chatId);
+  formData.append('id_emisor', idEmisor);
+  formData.append('id_receptor', idReceptor);
+  if (contenido) {
+    formData.append('contenido', contenido);
+  }
+  if (imagen) {
+    formData.append('imagen', {
+      uri: imagen.uri,
+      name: imagen.fileName || `chat_image.jpg`,
+      type: 'image/jpeg',
+    });
+  }
+
+  const r = await apiClient.post('/api/soc/mensajes', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
   });
   return r.data;
 };

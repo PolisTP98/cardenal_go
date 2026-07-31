@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Image } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
-import { getMe, getUsuario } from '../src/api/usuariosApi';
+import { getMe, getUsuario, actualizarFotoPerfil } from '../src/api/usuariosApi';
 import {
   getRelacionesSociales,
   enviarSolicitudAmistad,
@@ -14,6 +15,8 @@ import {
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import Card from '../components/Card';
+import ImageViewerModal from '../components/ImageViewerModal';
+import { API_BASE_URL } from '../src/api/apiClient';
 
 export default function ProfileScreen({ navigation, route }) {
   const { user, isPassenger, logout, updateRole } = useAuth();
@@ -24,6 +27,8 @@ export default function ProfileScreen({ navigation, route }) {
   const [relacion, setRelacion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [socialLoading, setSocialLoading] = useState(false);
+  const [actualizandoFoto, setActualizandoFoto] = useState(false);
+  const [visorFotoUri, setVisorFotoUri] = useState(null);
 
   const fetchProfileData = async () => {
     try {
@@ -55,6 +60,37 @@ export default function ProfileScreen({ navigation, route }) {
   useEffect(() => {
     fetchProfileData();
   }, [usuarioId]);
+
+  const handleCambiarFoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Se necesita acceso a la galería para cambiar la foto.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      setActualizandoFoto(true);
+      try {
+        const updatedUser = await actualizarFotoPerfil(result.assets[0]);
+        setProfile(updatedUser);
+        Alert.alert('¡Foto actualizada!', 'Tu foto de perfil ha sido cambiada exitosamente.');
+      } catch (err) {
+        const msg = err?.response?.data?.detail || 'No se pudo actualizar la foto.';
+        Alert.alert('Error', msg);
+      } finally {
+        setActualizandoFoto(false);
+      }
+    } catch (err) {
+      console.warn('[ProfileScreen] Error al abrir galería:', err);
+    }
+  };
 
   const handleAgregarAmigo = async () => {
     setSocialLoading(true);
@@ -192,7 +228,7 @@ export default function ProfileScreen({ navigation, route }) {
     // Navegar al dashboard correcto y limpiar el historial de navegación
     navigation.reset({
       index: 0,
-      routes: [{ name: newRole === 'Conductor' ? 'DriverDashboard' : 'PassengerDashboard' }],
+      routes: [{ name: newRole === 'Conductor' ? 'MainTabs' : 'PassengerDashboard' }],
     });
   };
 
@@ -205,17 +241,47 @@ export default function ProfileScreen({ navigation, route }) {
           if (navigation.canGoBack()) {
             navigation.goBack();
           } else {
-            navigation.navigate(isPassenger ? 'PassengerDashboard' : 'DriverDashboard');
+            navigation.navigate(isPassenger ? 'PassengerDashboard' : 'MainTabs');
           }
         }} 
       />
 
       <ScrollView contentContainerStyle={styles.content}>
         {profile && (
-          <View style={styles.profileHeader}>
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>{initials}</Text>
+        <View style={styles.profileHeader}>
+            {/* AVATAR / FOTO DE PERFIL */}
+            <View style={styles.avatarWrapper}>
+              {profile?.url_foto_perfil && profile.url_foto_perfil !== 'cardenal_upq.png' ? (
+                <TouchableOpacity
+                  onPress={() => setVisorFotoUri(`${API_BASE_URL}/${profile.url_foto_perfil}`)}
+                  activeOpacity={0.9}
+                >
+                  <Image
+                    source={{ uri: `${API_BASE_URL}/${profile.url_foto_perfil}` }}
+                    style={styles.avatarPhoto}
+                  />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
+              )}
+
+              {/* Botón de cámara — solo para el propio conductor */}
+              {esPropioPerfil && !isPassenger && (
+                <TouchableOpacity
+                  style={styles.avatarCameraBtn}
+                  onPress={handleCambiarFoto}
+                  disabled={actualizandoFoto}
+                >
+                  {actualizandoFoto
+                    ? <ActivityIndicator size="small" color="#FFF" />
+                    : <Ionicons name="camera" size={16} color="#FFF" />
+                  }
+                </TouchableOpacity>
+              )}
             </View>
+
             <Text style={styles.name}>{profile.nombre_completo}</Text>
             <Text style={styles.matricula}>Matrícula: {profile.matricula}</Text>
             <Text style={styles.email}>{profile.correo_institucional}</Text>
@@ -409,6 +475,14 @@ export default function ProfileScreen({ navigation, route }) {
           </Card>
         )}
       </ScrollView>
+
+      {/* VISOR DE FOTO DE PERFIL A PANTALLA COMPLETA */}
+      <ImageViewerModal
+        visible={!!visorFotoUri}
+        uri={visorFotoUri}
+        onClose={() => setVisorFotoUri(null)}
+        caption={profile?.nombre_completo}
+      />
     </SafeAreaView>
   );
 }
@@ -437,19 +511,50 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   avatarPlaceholder: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-    elevation: 3,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
   },
   avatarText: {
-    fontSize: 26,
+    fontSize: 30,
     fontWeight: 'bold',
     color: '#FFF',
+  },
+  avatarWrapper: {
+    position: 'relative',
+    marginBottom: 14,
+  },
+  avatarPhoto: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
+    borderColor: COLORS.primary,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+  },
+  avatarCameraBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+    elevation: 3,
   },
   name: {
     fontSize: 22,

@@ -9,7 +9,7 @@ import Card from '../components/Card';
 import EmptyState from '../components/EmptyState';
 
 export default function TripResultsScreen({ route, navigation }) {
-  const { destino, fecha } = route.params || {};
+  const { destino, fecha, lat_destino, lng_destino } = route.params || {};
 
   const [loading, setLoading] = useState(true);
   const [viajes, setViajes] = useState([]);
@@ -17,15 +17,23 @@ export default function TripResultsScreen({ route, navigation }) {
   const fetchResults = async () => {
     setLoading(true);
     try {
-      // Query trips by date from API
-      const data = await getViajesDisponibles({ fecha });
+      // Query trips by date from API and coordinates if provided
+      const params = { fecha };
+      if (lat_destino && lng_destino) {
+        params.lat_destino = lat_destino;
+        params.lng_destino = lng_destino;
+      }
+      const data = await getViajesDisponibles(params);
       
-      // Filter by destination locally
-      const filtered = data.filter(trip => {
-        const tripDest = (trip.nombre_destino || '').toLowerCase();
-        const searchDest = (destino || '').toLowerCase();
-        return tripDest.includes(searchDest);
-      });
+      // Filter by destination locally ONLY if we didn't use coordinates
+      let filtered = data;
+      if (!lat_destino || !lng_destino) {
+        filtered = data.filter(trip => {
+          const tripDest = (trip.nombre_destino || '').toLowerCase();
+          const searchDest = (destino || '').toLowerCase();
+          return tripDest.includes(searchDest);
+        });
+      }
 
       setViajes(filtered);
     } catch (error) {
@@ -38,7 +46,7 @@ export default function TripResultsScreen({ route, navigation }) {
 
   useEffect(() => {
     fetchResults();
-  }, [destino, fecha]);
+  }, [destino, fecha, lat_destino, lng_destino]);
 
   const renderTripCard = ({ item }) => {
     const driverName = item.vehiculo?.conductor?.usuario?.nombre_completo || 'Conductor';

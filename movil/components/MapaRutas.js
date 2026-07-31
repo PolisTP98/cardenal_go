@@ -82,6 +82,9 @@ export default function MapaRutas({
   const waypointKey = generateWaypointKey(waypoints);
 
   // Synchronize customRouteCoords or fetch route when coordinate key changes
+  // NOTE: we use customRouteCoords.length (not the array itself) as a dependency
+  // to avoid infinite loops caused by a new [] literal being passed on every render.
+  const customRouteCoordsLen = customRouteCoords ? customRouteCoords.length : 0;
   useEffect(() => {
     if (customRouteCoords && customRouteCoords.length > 0) {
       setRouteCoords(customRouteCoords);
@@ -92,7 +95,10 @@ export default function MapaRutas({
         fetchRoute(waypoints, waypointKey);
       }
     } else {
-      setRouteCoords([]);
+      // Only clear if the waypointKey actually changed (not on every render)
+      if (lastProcessedKeyRef.current !== '') {
+        setRouteCoords([]);
+      }
       lastProcessedKeyRef.current = '';
     }
 
@@ -108,7 +114,7 @@ export default function MapaRutas({
         }, 800);
       }
     }
-  }, [waypointKey, customRouteCoords, showRoute]);
+  }, [waypointKey, customRouteCoordsLen, showRoute]);
 
   const fetchRoute = async (points, key) => {
     if (!points || points.length < 2) return;

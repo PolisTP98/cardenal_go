@@ -2,14 +2,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  ScrollView,
+  ScrollView, Image
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import { useAuth } from '../src/context/AuthContext';
 import { getMensajesChat, enviarMensaje, marcarChatLeido } from '../src/api/socialApi';
+import { API_BASE_URL } from '../src/api/apiClient';
+import ImageViewerModal from '../components/ImageViewerModal';
 
 const POLLING_INTERVAL_MS = 4000;
 
@@ -24,6 +27,8 @@ export default function ChatScreen({ navigation, route }) {
 
   const [mensajes, setMensajes] = useState([]);
   const [texto, setTexto] = useState('');
+  const [imagen, setImagen] = useState(null);
+  const [imagenFullscreen, setImagenFullscreen] = useState(null);
   const [loading, setLoading] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const scrollRef = useRef(null);
@@ -61,19 +66,42 @@ export default function ChatScreen({ navigation, route }) {
     };
   }, [cargarMensajes]);
 
+  const handlePickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Se necesita acceso a la galería para enviar imágenes.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setImagen(result.assets[0]);
+      }
+    } catch (error) {
+      console.warn('[ChatScreen] Error al seleccionar imagen:', error);
+    }
+  };
+
   const handleEnviar = async () => {
     const contenido = texto.trim();
-    if (!contenido || enviando || !chatId || !otroUsuarioId) return;
+    if ((!contenido && !imagen) || enviando || !chatId || !otroUsuarioId) return;
     setEnviando(true);
     setTexto('');
+    const imgBackup = imagen;
+    setImagen(null);
     try {
-      const nuevoMsg = await enviarMensaje(chatId, user.id, otroUsuarioId, contenido);
+      const nuevoMsg = await enviarMensaje(chatId, user.id, otroUsuarioId, contenido, imgBackup);
       setMensajes((prev) => [...prev, nuevoMsg]);
       lastMsgIdRef.current = nuevoMsg.id;
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (err) {
       Alert.alert('Error', 'No se pudo enviar el mensaje. Intenta de nuevo.');
       setTexto(contenido);
+      setImagen(imgBackup);
     } finally {
       setEnviando(false);
     }
@@ -121,9 +149,20 @@ export default function ChatScreen({ navigation, route }) {
             </View>
           )}
           <View style={[styles.bubble, esMio ? styles.bubbleMio : styles.bubbleOtro]}>
-            <Text style={[styles.bubbleText, esMio ? styles.bubbleTextMio : styles.bubbleTextOtro]}>
-              {msg.contenido}
-            </Text>
+            {msg.url_imagen && (
+              <TouchableOpacity onPress={() => setImagenFullscreen(`${API_BASE_URL}/${msg.url_imagen}`)}>
+                <Image 
+                  source={{ uri: `${API_BASE_URL}/${msg.url_imagen}` }} 
+                  style={styles.chatImage} 
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            )}
+            {msg.contenido ? (
+              <Text style={[styles.bubbleText, esMio ? styles.bubbleTextMio : styles.bubbleTextOtro]}>
+                {msg.contenido}
+              </Text>
+            ) : null}
             <View style={styles.bubbleMeta}>
               <Text style={[styles.bubbleHora, esMio ? styles.bubbleHoraMio : styles.bubbleHoraOtro]}>
                 {formatHora(msg.fecha_hora_registro)}
@@ -201,13 +240,28 @@ export default function ChatScreen({ navigation, route }) {
             style={styles.messagesList}
             contentContainerStyle={styles.messagesContent}
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+            scrollEnabled={!imagenFullscreen}
+            pointerEvents={imagenFullscreen ? 'none' : 'auto'}
           >
             {renderMensajes()}
           </ScrollView>
         )}
 
+        {/* IMAGE PREVIEW */}
+        {imagen && (
+          <View style={styles.previewContainer}>
+            <Image source={{ uri: imagen.uri }} style={styles.previewImage} />
+            <TouchableOpacity style={styles.previewClose} onPress={() => setImagen(null)}>
+              <Ionicons name="close-circle" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* INPUT */}
         <View style={styles.inputBar}>
+          <TouchableOpacity style={styles.attachBtn} onPress={handlePickImage}>
+            <Ionicons name="image-outline" size={24} color={COLORS.textSecondary} />
+          </TouchableOpacity>
           <TextInput
             style={styles.input}
             placeholder="Escribe un mensaje..."
@@ -218,11 +272,12 @@ export default function ChatScreen({ navigation, route }) {
             maxLength={500}
             returnKeyType="send"
             onSubmitEditing={handleEnviar}
+            editable={!imagenFullscreen}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, (!texto.trim() || enviando) && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!texto.trim() && !imagen) || enviando ? styles.sendBtnDisabled : null]}
             onPress={handleEnviar}
-            disabled={!texto.trim() || enviando}
+            disabled={(!texto.trim() && !imagen) || enviando}
           >
             {enviando
               ? <ActivityIndicator size="small" color="#FFF" />
@@ -231,6 +286,13 @@ export default function ChatScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* VISOR DE IMAGEN — renderizado fuera del KeyboardAvoidingView para no perder z-index */}
+      <ImageViewerModal
+        visible={!!imagenFullscreen}
+        uri={imagenFullscreen}
+        onClose={() => setImagenFullscreen(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -447,5 +509,36 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 6,
     textAlign: 'center',
+  },
+  attachBtn: {
+    padding: 10,
+    marginRight: 4,
+    marginBottom: 2,
+  },
+  previewContainer: {
+    flexDirection: 'row',
+    padding: 12,
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+  },
+  previewClose: {
+    position: 'absolute',
+    top: 4,
+    left: 64,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+  },
+  chatImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 6,
   },
 });

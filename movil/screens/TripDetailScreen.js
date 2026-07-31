@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
 import { getViaje, actualizarViaje } from '../src/api/viajesApi';
 import { getSolicitudesViaje, crearSolicitud, actualizarSolicitud, getSolicitudesPasajero, getRecomendacionIA } from '../src/api/solicitudesApi';
 import { getChatViaje } from '../src/api/socialApi';
+import { API_BASE_URL } from '../src/api/apiClient';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import Card from '../components/Card';
@@ -394,8 +395,7 @@ export default function TripDetailScreen({ route, navigation }) {
             setActionLoading(true);
             try {
               // Enviar el id_estatus 4 (Cancelado)
-              // Idealmente esto se manda al backend con un campo 'motivo', pero por ahora usamos el endpoint existente
-              await actualizarViaje(viajeId, { id_estatus: 4, notas_adicionales: 'Cancelado por eventualidad externa' });
+              await actualizarViaje(viajeId, { id_estatus: 4 });
               Alert.alert('Eventualidad Reportada', 'El viaje ha sido cancelado exitosamente. No se te aplicarán penalizaciones.');
               loadData();
             } catch (err) {
@@ -466,7 +466,7 @@ export default function TripDetailScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TopHeader title="Detalle del Viaje" showBack onBackPress={() => navigation.navigate(isDriver ? 'DriverDashboard' : 'PassengerDashboard')} />
+      <TopHeader title="Detalle del Viaje" showBack onBackPress={() => navigation.navigate(isDriver ? 'MainTabs' : 'PassengerDashboard')} />
       <LoadingOverlay visible={actionLoading} message="Procesando acción..." />
 
       <KeyboardAvoidingView
@@ -548,10 +548,20 @@ export default function TripDetailScreen({ route, navigation }) {
               onPress={() => navigation.navigate('Profile', { usuarioId: viaje.vehiculo.conductor.usuario.id })}
               activeOpacity={0.7}
             >
-              <View style={styles.driverAvatar}>
-                <Text style={styles.avatarText}>
-                  {viaje.vehiculo.conductor.usuario.nombre_completo.charAt(0)}
-                </Text>
+              <View style={styles.driverAvatarWrapper}>
+                {viaje.vehiculo.conductor.usuario.url_foto_perfil &&
+                viaje.vehiculo.conductor.usuario.url_foto_perfil !== 'cardenal_upq.png' ? (
+                  <Image
+                    source={{ uri: `${API_BASE_URL}/${viaje.vehiculo.conductor.usuario.url_foto_perfil}` }}
+                    style={styles.driverAvatarImg}
+                  />
+                ) : (
+                  <View style={styles.driverAvatar}>
+                    <Text style={styles.avatarText}>
+                      {viaje.vehiculo.conductor.usuario.nombre_completo.charAt(0)}
+                    </Text>
+                  </View>
+                )}
               </View>
               <View style={styles.driverInfo}>
                 <Text style={styles.driverName}>{viaje.vehiculo.conductor.usuario.nombre_completo}</Text>
@@ -561,8 +571,28 @@ export default function TripDetailScreen({ route, navigation }) {
               </View>
               <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
             </TouchableOpacity>
+
+            {/* VEHICLE PHOTOS */}
+            {viaje.vehiculo?.fotos && Array.isArray(viaje.vehiculo.fotos) && viaje.vehiculo.fotos.length > 0 && (
+              <View style={styles.vehiclePhotosContainer}>
+                <Text style={styles.vehiclePhotosTitle}>📸 Fotos del Vehículo</Text>
+                <Text style={styles.vehiclePhotosSubtitle}>
+                  {viaje.vehiculo.modelo} · {viaje.vehiculo.color} · Placa: {viaje.vehiculo.placa}
+                </Text>
+                <View style={styles.vehiclePhotosList}>
+                  {viaje.vehiculo.fotos.map((foto, index) => (
+                    <Image
+                      key={index}
+                      source={{ uri: `${API_BASE_URL}/${foto}` }}
+                      style={styles.vehiclePhotoImg}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
           </Card>
         )}
+
 
         {/* OWNER (CONDUCTOR) TRIP CONTROL SECTION */}
         {isOwner && (
@@ -572,11 +602,11 @@ export default function TripDetailScreen({ route, navigation }) {
               {viaje.id_estatus === 1 && (
                 <>
                   <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: COLORS.warning }]}
+                    style={[styles.actionBtn, { backgroundColor: COLORS.success }]}
                     onPress={() => handleUpdateTripStatus(2, 'En curso')}
                   >
-                    <Ionicons name="play" size={16} color="#1E293B" />
-                    <Text style={[styles.actionBtnText, { color: '#1E293B' }]}>Iniciar viaje</Text>
+                    <Ionicons name="play" size={16} color="#FFF" />
+                    <Text style={[styles.actionBtnText, { color: '#FFF' }]}>Iniciar viaje</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.actionBtn, { backgroundColor: COLORS.danger }]}
@@ -1022,6 +1052,45 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  driverAvatarWrapper: {
+    marginRight: 12,
+  },
+  driverAvatarImg: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  vehiclePhotosContainer: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  vehiclePhotosTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  vehiclePhotosSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 10,
+  },
+  vehiclePhotosList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  vehiclePhotoImg: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   driverInfo: {
     flex: 1,

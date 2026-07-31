@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
@@ -8,12 +8,16 @@ import PrimaryButton from '../components/PrimaryButton';
 import Card from '../components/Card';
 
 import LocationSearchInput from '../components/LocationSearchInput';
+import MapaRutas from '../components/MapaRutas';
 
 export default function SearchTripScreen({ navigation }) {
   const [origen, setOrigen] = useState('UPQ');
   const [destino, setDestino] = useState('');
   const [origenValid, setOrigenValid] = useState(true);
   const [destinoValid, setDestinoValid] = useState(false);
+  const [origenCoords, setOrigenCoords] = useState({ latitude: 20.5891, longitude: -100.4376 });
+  const [destinoCoords, setDestinoCoords] = useState(null);
+  const [selectingTarget, setSelectingTarget] = useState('destino');
   
   // Prefill with today's date formatted as YYYY-MM-DD
   const todayStr = new Date().toISOString().split('T')[0];
@@ -34,8 +38,24 @@ export default function SearchTripScreen({ navigation }) {
       origen,
       destino,
       fecha,
+      lat_destino: destinoCoords?.latitude,
+      lng_destino: destinoCoords?.longitude,
     });
   };
+
+  // Coordenadas para mostrar en el mapa — memoized to avoid creating a new
+  // array reference on every render (which would trigger an infinite loop in MapaRutas)
+  const waypoints = useMemo(() => {
+    const pts = [];
+    if (origenCoords) pts.push({ coords: origenCoords, type: 'origen', latitude: origenCoords.latitude, longitude: origenCoords.longitude });
+    if (destinoCoords) pts.push({ coords: destinoCoords, type: 'destino', latitude: destinoCoords.latitude, longitude: destinoCoords.longitude });
+    return pts;
+  }, [
+    origenCoords?.latitude,
+    origenCoords?.longitude,
+    destinoCoords?.latitude,
+    destinoCoords?.longitude,
+  ]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -62,6 +82,7 @@ export default function SearchTripScreen({ navigation }) {
               style={{ zIndex: 20 }}
               onSelectLocation={(loc) => {
                 setOrigen(loc.address || loc.name);
+                setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
                 setOrigenValid(true);
               }}
             />
@@ -79,7 +100,47 @@ export default function SearchTripScreen({ navigation }) {
               style={{ zIndex: 10 }}
               onSelectLocation={(loc) => {
                 setDestino(loc.address || loc.name);
+                setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
                 setDestinoValid(true);
+              }}
+            />
+
+            <View style={styles.selectorModeRow}>
+              <Text style={styles.selectorLabel}>Toca el mapa para definir:</Text>
+              <View style={styles.selectorBtns}>
+                <TouchableOpacity
+                  style={[styles.modeBtn, selectingTarget === 'origen' && styles.modeBtnActive]}
+                  onPress={() => setSelectingTarget('origen')}
+                >
+                  <Text style={[styles.modeBtnText, selectingTarget === 'origen' && styles.modeBtnTextActive]}>🟢 Origen</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modeBtn, selectingTarget === 'destino' && styles.modeBtnActive]}
+                  onPress={() => setSelectingTarget('destino')}
+                >
+                  <Text style={[styles.modeBtnText, selectingTarget === 'destino' && styles.modeBtnTextActive]}>🔴 Destino</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <MapaRutas
+              interactive={true}
+              height={220}
+              waypoints={waypoints}
+              onMapPress={(loc) => {
+                if (selectingTarget === 'origen') {
+                  setOrigenCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                  if (loc.address) {
+                    setOrigen(loc.address);
+                    setOrigenValid(true);
+                  }
+                } else {
+                  setDestinoCoords({ latitude: loc.latitude, longitude: loc.longitude });
+                  if (loc.address) {
+                    setDestino(loc.address);
+                    setDestinoValid(true);
+                  }
+                }
               }}
             />
 
@@ -128,4 +189,38 @@ const styles = StyleSheet.create({
   searchBtn: {
     marginTop: 12,
   },
+  selectorModeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  selectorLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  selectorBtns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modeBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: '#F0F0F0',
+  },
+  modeBtnActive: {
+    backgroundColor: COLORS.primary + '20',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  modeBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+  },
+  modeBtnTextActive: {
+    color: COLORS.primary,
+  }
 });

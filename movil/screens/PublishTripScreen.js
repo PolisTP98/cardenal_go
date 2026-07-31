@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
@@ -13,6 +13,7 @@ import { getConductorByUsuario, getVehiculos } from '../src/api/usuariosApi';
 import { crearViaje, UPQ_COORDS } from '../src/api/viajesApi';
 import LocationSearchInput from '../components/LocationSearchInput';
 import MapaRutas from '../components/MapaRutas';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function PublishTripScreen({ navigation }) {
   const { user } = useAuth();
@@ -30,6 +31,13 @@ export default function PublishTripScreen({ navigation }) {
   const [selectingTarget, setSelectingTarget] = useState('destino'); // 'origen' | 'destino'
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
+  
+  // Date/Time picker state
+  const [dateObj, setDateObj] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [tempDate, setTempDate] = useState(new Date()); // Para iOS modal provisional
+
   const [asientos, setAsientos] = useState('3');
   // Dynamic pricing handled by passengers now, so precio is fixed to 0 at trip creation
   const [precio, setPrecio] = useState('0');
@@ -49,13 +57,13 @@ export default function PublishTripScreen({ navigation }) {
         } else {
           Alert.alert('Vehículo requerido', 'Debes registrar un vehículo para poder publicar un viaje.', [
             { text: 'Ir a Registro', onPress: () => navigation.navigate('DriverRegistration') },
-            { text: 'Cancelar', onPress: () => navigation.goBack() }
+            { text: 'Cancelar', onPress: () => navigation.navigate('Inicio') }
           ]);
         }
       } catch (err) {
         Alert.alert('Perfil incompleto', 'No pudimos verificar tus datos de conductor.', [
           { text: 'Registrar', onPress: () => navigation.navigate('DriverRegistration') },
-          { text: 'Atrás', onPress: () => navigation.goBack() }
+          { text: 'Atrás', onPress: () => navigation.navigate('Inicio') }
         ]);
       } finally {
         setLoading(false);
@@ -136,11 +144,21 @@ export default function PublishTripScreen({ navigation }) {
 
       await crearViaje(tripData);
 
+      // Limpiar formulario
+      setFecha('');
+      setHora('');
+      setDateObj(new Date());
+      setAsientos('3');
+      
       Alert.alert('¡Viaje Publicado!', 'Tu viaje se encuentra listo para recibir solicitudes de pasajeros.', [
-        { text: 'Genial', onPress: () => navigation.navigate('DriverDashboard') }
+        { text: 'Genial', onPress: () => navigation.navigate('Inicio') }
       ]);
     } catch (err) {
-      Alert.alert('Error al publicar', err.displayMessage || 'Ocurrió un error al registrar el viaje.');
+      if (err.response?.status === 400 && err.response?.data?.detail) {
+        Alert.alert('No se puede publicar', err.response.data.detail);
+      } else {
+        Alert.alert('Error al publicar', err.displayMessage || 'Ocurrió un error al registrar el viaje.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -156,8 +174,8 @@ export default function PublishTripScreen({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TopHeader title="Publicar Viaje" showBack onBackPress={() => navigation.goBack()} />
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <TopHeader title="Publicar Viaje" />
       <LoadingOverlay visible={submitting} message="Publicando viaje..." />
 
       <KeyboardAvoidingView
@@ -261,22 +279,126 @@ export default function PublishTripScreen({ navigation }) {
           <Text style={styles.sectionTitle}>Agenda y Capacidad</Text>
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              <CustomInput
-                label="Fecha (YYYY-MM-DD)"
-                placeholder="Ej. 2026-07-20"
-                value={fecha}
-                onChangeText={setFecha}
-              />
+              <Text style={styles.pickerLabel}>Fecha del viaje</Text>
+              <TouchableOpacity 
+                style={styles.pickerButton} 
+                onPress={() => {
+                  setTempDate(dateObj);
+                  setShowDatePicker(true);
+                }}
+              >
+                <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.pickerButtonText}>
+                  {fecha || 'Seleccionar fecha'}
+                </Text>
+              </TouchableOpacity>
             </View>
             <View style={{ flex: 1, marginLeft: 8 }}>
-              <CustomInput
-                label="Hora (HH:MM)"
-                placeholder="Ej. 14:30"
-                value={hora}
-                onChangeText={setHora}
-              />
+              <Text style={styles.pickerLabel}>Hora de salida</Text>
+              <TouchableOpacity 
+                style={styles.pickerButton} 
+                onPress={() => {
+                  setTempDate(dateObj);
+                  setShowTimePicker(true);
+                }}
+              >
+                <Ionicons name="time-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.pickerButtonText}>
+                  {hora || 'Seleccionar hora'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
+
+          {/* Android DatePicker */}
+          {Platform.OS === 'android' && showDatePicker && (
+            <DateTimePicker
+              value={dateObj}
+              mode="date"
+              display="default"
+              minimumDate={new Date()}
+              onChange={(event, selectedDate) => {
+                setShowDatePicker(false);
+                if (selectedDate) {
+                  setDateObj(selectedDate);
+                  const year = selectedDate.getFullYear();
+                  const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                  const day = String(selectedDate.getDate()).padStart(2, '0');
+                  setFecha(`${year}-${month}-${day}`);
+                }
+              }}
+            />
+          )}
+
+          {/* Android TimePicker */}
+          {Platform.OS === 'android' && showTimePicker && (
+            <DateTimePicker
+              value={dateObj}
+              mode="time"
+              display="spinner"
+              onChange={(event, selectedDate) => {
+                setShowTimePicker(false);
+                if (selectedDate) {
+                  setDateObj(selectedDate);
+                  const hours = String(selectedDate.getHours()).padStart(2, '0');
+                  const minutes = String(selectedDate.getMinutes()).padStart(2, '0');
+                  setHora(`${hours}:${minutes}`);
+                }
+              }}
+            />
+          )}
+
+          {/* iOS Modal para Date y Time Picker */}
+          {Platform.OS === 'ios' && (
+            <Modal
+              visible={showDatePicker || showTimePicker}
+              transparent={true}
+              animationType="slide"
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <TouchableOpacity onPress={() => {
+                      setShowDatePicker(false);
+                      setShowTimePicker(false);
+                    }}>
+                      <Text style={styles.modalCancelText}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => {
+                      setDateObj(tempDate);
+                      if (showDatePicker) {
+                        const year = tempDate.getFullYear();
+                        const month = String(tempDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(tempDate.getDate()).padStart(2, '0');
+                        setFecha(`${year}-${month}-${day}`);
+                      }
+                      if (showTimePicker) {
+                        const hours = String(tempDate.getHours()).padStart(2, '0');
+                        const minutes = String(tempDate.getMinutes()).padStart(2, '0');
+                        setHora(`${hours}:${minutes}`);
+                      }
+                      setShowDatePicker(false);
+                      setShowTimePicker(false);
+                    }}>
+                      <Text style={styles.modalConfirmText}>Aceptar</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={tempDate}
+                    mode={showDatePicker ? 'date' : 'time'}
+                    display="spinner"
+                    minimumDate={showDatePicker ? new Date() : undefined}
+                    onChange={(event, selectedDate) => {
+                      if (selectedDate) {
+                        setTempDate(selectedDate);
+                      }
+                    }}
+                    style={{ backgroundColor: 'white' }}
+                  />
+                </View>
+              </View>
+            </Modal>
+          )}
 
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 8 }}>

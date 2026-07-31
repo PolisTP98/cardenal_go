@@ -335,7 +335,6 @@ class VehiculoCreate(BaseModel):
     color: str = Field(..., max_length = 30)
     modelo: str = Field(..., max_length = 50)
     anio: int
-    fotos: Any = Field(...)
 
 class VehiculoUpdate(BaseModel):
     color: Optional[str] = Field(None, max_length = 30)
@@ -579,7 +578,7 @@ class MensajeChatCreate(BaseModel):
     id_chat: int
     id_emisor: int
     id_receptor: int
-    contenido: str = Field(..., min_length = 1)
+    contenido: Optional[str] = None
 
 class MensajeChatUpdate(BaseModel):
     leido: Optional[bool] = None
@@ -590,7 +589,8 @@ class MensajeChatResponse(BaseModel):
     id_chat: int
     id_emisor: int
     id_receptor: int
-    contenido: str
+    contenido: Optional[str] = None
+    url_imagen: Optional[str] = None
     leido: bool
     fecha_hora_registro: datetime
     emisor: Optional[UsuarioBasicoResponse] = None
@@ -602,7 +602,8 @@ class UltimoMensajeResumen(BaseModel):
     id_chat: int
     id_emisor: int
     id_receptor: int
-    contenido: str
+    contenido: Optional[str] = None
+    url_imagen: Optional[str] = None
     leido: bool
     fecha_hora_registro: datetime
 

@@ -96,7 +96,7 @@ export default function PassengerDashboardScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <TopHeader
         title="Cardenal GO"
         rightIcon={() => (

@@ -1,4 +1,5 @@
 import React from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
@@ -7,7 +8,7 @@ import PrimaryButton from '../components/PrimaryButton';
 
 export default function VerifyCodeScreen({ navigation }) {
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
         <TopHeader title="Cardenal GO" showBack onBackPress={() => navigation.goBack()} />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -41,7 +42,7 @@ export default function VerifyCodeScreen({ navigation }) {
               <Text style={styles.spamNotice}>Revisa tu carpeta de spam.</Text>
           </ScrollView>
         </KeyboardAvoidingView>
-        </View>
+        </SafeAreaView>
     );
 }
 
