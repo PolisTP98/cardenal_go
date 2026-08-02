@@ -1,26 +1,421 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Gestión de reportes</h2>
-<table class="table table-striped mt-3">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Reportador</th>
-            <th>Reportado</th>
-            <th>Viaje</th>
-            <th>Fecha</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for r in reportes %}
-        <tr>
-            <td>{{ r.id }}</td>
-            <td>{{ r.id_reportador }}</td>
-            <td>{{ r.id_reportado }}</td>
-            <td>{{ r.id_viaje }}</td>
-            <td>{{ r.fecha_hora_registro }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Gestión de incidencias (reportes)</h1>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalCrearReporte">
+        <i class="bi bi-plus-lg me-1"></i>Nuevo reporte
+    </button>
+</div>
+
+<div class="row g-3 mb-4 bg-light p-3 rounded border">
+    <div class="col-md-3">
+        <label for="filtroBusqueda" class="form-label fw-bold">Buscar:</label>
+        <input type="text" id="filtroBusqueda" class="form-control" placeholder="Matrícula o nombre..." oninput="aplicarFiltrosReportes()">
+    </div>
+    
+    <div class="col-md-3">
+        <label for="filtroModoBusqueda" class="form-label fw-bold">Mostrar:</label>
+        <select id="filtroModoBusqueda" class="form-select" onchange="aplicarFiltrosReportes()">
+            <option value="ambos">Todos</option>
+            <option value="reportador">Realizados por el usuario (reportador)</option>
+            <option value="reportado">Dirigidos hacia el usuario (reportado)</option>
+        </select>
+    </div>
+
+    <div class="col-md-2">
+        <label for="filtroFechaInicio" class="form-label fw-bold">Desde:</label>
+        <input type="date" id="filtroFechaInicio" class="form-control" onchange="aplicarFiltrosReportes()">
+    </div>
+    
+    <div class="col-md-2">
+        <label for="filtroFechaFin" class="form-label fw-bold">Hasta:</label>
+        <input type="date" id="filtroFechaFin" class="form-control" onchange="aplicarFiltrosReportes()">
+    </div>
+
+    <div class="col-md-2">
+        <label for="filtroOrden" class="form-label fw-bold">Ordenar por:</label>
+        <select id="filtroOrden" class="form-select" onchange="aplicarFiltrosReportes()">
+            <option value="fecha_desc">Más recientes</option>
+            <option value="fecha_asc">Más antiguos</option>
+        </select>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th>Reportador (matrícula/nombre)</th>
+                <th>Reportado (matrícula/nombre)</th>
+                <th>Motivo principal</th>
+                <th>Fecha de registro</th>
+                <th class="text-center">Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="tbodyReportes">
+            {% for r in reportes %}
+            <tr class="fila-reporte cursor-pointer" 
+                data-id="{{ r.id }}"
+                data-fecha="{{ (r.fecha_hora_registro|string)[:10] }}"
+                data-reportador-nombre="{{ r.reportador.nombre_completo | lower }}"
+                data-reportador-matricula="{{ r.reportador.matricula | lower }}"
+                data-reportado-nombre="{{ r.reportado.nombre_completo | lower }}"
+                data-reportado-matricula="{{ r.reportado.matricula | lower }}"
+                onclick="abrirDetalleReporte('modalDetalleReporte{{ r.id }}', event)">
+                <td>{{ r.id }}</td>
+                <td><span class="badge bg-info text-dark">{{ r.reportador.matricula }}</span> <br> <small>{{ r.reportador.nombre_completo }}</small></td>
+                <td><span class="badge bg-warning text-dark">{{ r.reportado.matricula }}</span> <br> <small>{{ r.reportado.nombre_completo }}</small></td>
+                <td>{{ r.motivo_reporte.nombre if r.motivo_reporte else 'Sin clasificar' }}</td>
+                <td>{{ (r.fecha_hora_registro|string)[:16] }}</td>
+                <td class="text-center">
+                    {% if rol == 'Superadministrador' %}
+                    <button class="btn btn-sm btn-warning me-1 action-btn" data-bs-toggle="modal" data-bs-target="#modalEditarReporte{{ r.id }}">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    {% endif %}
+                    <form action="{{ url_for('eliminar_reporte', id=r.id) }}" method="POST" class="d-inline action-btn">
+                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('¿Estás seguro de eliminar este reporte?')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </td>
+            </tr>
+
+            <div class="modal fade text-start" id="modalDetalleReporte{{ r.id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header bg-dark text-white">
+                            <h5 class="modal-title">Detalles del reporte #{{ r.id }}</h5>
+                            <button class="btn btn-danger ms-auto me-3" data-bs-toggle="modal" data-bs-target="#modalCrearSancion{{ r.id }}" data-bs-dismiss="modal">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i> Agregar sanción
+                            </button>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row mb-3">
+                                <div class="col-md-6 border-end">
+                                    <h6 class="text-muted">Información del reportador</h6>
+                                    <p class="mb-1"><strong>Nombre:</strong> {{ r.reportador.nombre_completo }}</p>
+                                    <p class="mb-0"><strong>Matrícula:</strong> {{ r.reportador.matricula }}</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-muted">Información del reportado</h6>
+                                    <p class="mb-1"><strong>Nombre:</strong> {{ r.reportado.nombre_completo }}</p>
+                                    <p class="mb-0"><strong>Matrícula:</strong> {{ r.reportado.matricula }}</p>
+                                </div>
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <h6><strong>Motivo principal:</strong> {{ r.motivo_reporte.nombre if r.motivo_reporte else 'N/A' }}</h6>
+                                <p><strong>Motivo personalizado/notas:</strong> {{ r.motivo_personalizado or 'Sin detalles adicionales.' }}</p>
+                            </div>
+                            <div class="mb-3">
+                                <h6><strong>Evidencias:</strong></h6>
+                                <pre class="bg-light p-2 rounded border">{{ r.evidencias | tojson(indent=2) if r.evidencias else 'Sin evidencias adjuntas.' }}</pre>
+                            </div>
+                            <div class="mb-3">
+                                <h6><strong>Estado actual del reporte:</strong> <span class="badge bg-secondary">{{ r.estatus_reporte.nombre if r.estatus_reporte else 'Registrado' }}</span></h6>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL: CREAR SANCIÓN -->
+            <div class="modal fade" id="modalCrearSancion{{ r.id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content border-danger">
+                        <form action="{{ url_for('crear_sancion') }}" method="POST">
+                            <div class="modal-header bg-danger text-white">
+                                <h5 class="modal-title">Sancionar a: {{ r.reportado.nombre_completo }}</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <input type="hidden" name="id_usuario" value="{{ r.reportado.id }}">
+                                <input type="hidden" name="id_administrador" value="{{ current_user_id }}">
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Estatus de sanción aplicado</label>
+                                    <select name="id_estatus_usuario" class="form-select" required>
+                                        {% for estatus in estatus_usuarios %}
+                                        <option value="{{ estatus.id }}">{{ estatus.nombre }} ({{ estatus.dias_sancion }} días)</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">Modificar calificación (pasajero)</label>
+                                        <input type="number" step="0.01" min="1" max="5" name="nueva_calificacion_pasajero" class="form-control" value="{{ r.reportado.calificacion_pasajero }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">Modificar calificación (conductor)</label>
+                                        <input type="number" step="0.01" min="1" max="5" name="nueva_calificacion_conductor" class="form-control" value="{{ r.reportado.calificacion_conductor }}">
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Fecha de fin (opcional)</label>
+                                    <input type="date" name="fecha_fin" class="form-control">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Notas del administrador</label>
+                                    <textarea name="notas_administrador" class="form-control" rows="3" required></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#modalDetalleReporte{{ r.id }}">Volver al reporte</button>
+                                <button type="submit" class="btn btn-danger">Aplicar sanción</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            {% if rol == 'Superadministrador' %}
+            <div class="modal fade text-start" id="modalEditarReporte{{ r.id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <form action="{{ url_for('editar_reporte', id=r.id) }}" method="POST">
+                            <div class="modal-header bg-warning">
+                                <h5 class="modal-title">Editar reporte #{{ r.id }}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="mb-3 position-relative">
+                                    <label class="form-label fw-bold">Usuario reportador</label>
+                                    <input type="hidden" name="id_reportador" id="edit_id_reportador_{{ r.id }}" value="{{ r.reportador.id }}">
+                                    <input type="text" class="form-control" id="edit_search_reportador_{{ r.id }}" placeholder="Buscar por matrícula o nombre..." value="{{ r.reportador.matricula }} - {{ r.reportador.nombre_completo }}" onkeyup="filtrarDropdownUsuarios(this.value, 'dropdown_edit_reportador_{{ r.id }}')">
+                                    <div class="list-group position-absolute w-100 shadow d-none" id="dropdown_edit_reportador_{{ r.id }}" style="max-height: 150px; overflow-y: auto; z-index: 1000;">
+                                        {% for u in usuarios_restringidos %}
+                                        <button type="button" class="list-group-item list-group-item-action usuario-item" data-nombre="{{ u.nombre_completo | lower }}" data-matricula="{{ u.matricula | lower }}" onclick="seleccionarUsuario('{{ u.id }}', '{{ u.matricula }} - {{ u.nombre_completo }}', 'edit_id_reportador_{{ r.id }}', 'edit_search_reportador_{{ r.id }}', 'dropdown_edit_reportador_{{ r.id }}')">
+                                            {{ u.matricula }} - {{ u.nombre_completo }}
+                                        </button>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+
+                                <div class="mb-3 position-relative">
+                                    <label class="form-label fw-bold">Usuario reportado</label>
+                                    <input type="hidden" name="id_reportado" id="edit_id_reportado_{{ r.id }}" value="{{ r.reportado.id }}">
+                                    <input type="text" class="form-control" id="edit_search_reportado_{{ r.id }}" placeholder="Buscar por matrícula o nombre..." value="{{ r.reportado.matricula }} - {{ r.reportado.nombre_completo }}" onkeyup="filtrarDropdownUsuarios(this.value, 'dropdown_edit_reportado_{{ r.id }}')">
+                                    <div class="list-group position-absolute w-100 shadow d-none" id="dropdown_edit_reportado_{{ r.id }}" style="max-height: 150px; overflow-y: auto; z-index: 1000;">
+                                        {% for u in usuarios_restringidos %}
+                                        <button type="button" class="list-group-item list-group-item-action usuario-item" data-nombre="{{ u.nombre_completo | lower }}" data-matricula="{{ u.matricula | lower }}" onclick="seleccionarUsuario('{{ u.id }}', '{{ u.matricula }} - {{ u.nombre_completo }}', 'edit_id_reportado_{{ r.id }}', 'edit_search_reportado_{{ r.id }}', 'dropdown_edit_reportado_{{ r.id }}')">
+                                            {{ u.matricula }} - {{ u.nombre_completo }}
+                                        </button>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Motivo del reporte</label>
+                                    <select name="id_motivo_reporte" class="form-select" required>
+                                        {% for m in motivos %}
+                                        <option value="{{ m.id }}" {% if m.id == r.id_motivo_reporte %}selected{% endif %}>{{ m.nombre }} (Gravedad: {{ m.gravedad }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Motivo personalizado</label>
+                                    <textarea name="motivo_personalizado" class="form-control" rows="3">{{ r.motivo_personalizado }}</textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">ID del viaje</label>
+                                    <input type="number" name="id_viaje" class="form-control" value="{{ r.id_viaje }}" required>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% else %}
+            <tr id="filaInicialVacia">
+                <td colspan="6" class="text-center">No hay reportes registrados en el sistema</td>
+            </tr>
+            {% endfor %}
+            <tr id="filaSinResultados" style="display: none;">
+                <td colspan="6" class="text-center">No se encontraron reportes</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="modalCrearReporte" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('crear_reporte') }}" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title">Crear nuevo reporte</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="id_reportador" value="{{ current_user_id }}">
+
+                    <div class="mb-3 position-relative">
+                        <label class="form-label fw-bold">Seleccionar usuario a reportar <span class="text-danger">*</span></label>
+                        <input type="hidden" name="id_reportado" id="create_id_reportado" required>
+                        <input type="text" class="form-control" id="create_search_reportado" placeholder="Escribe para buscar matrícula o nombre..." onkeyup="filtrarDropdownUsuarios(this.value, 'dropdown_create_reportado')" autocomplete="off" required>
+                        
+                        <div class="list-group position-absolute w-100 shadow d-none" id="dropdown_create_reportado" style="max-height: 150px; overflow-y: auto; z-index: 1000;">
+                            {% for u in usuarios_restringidos %}
+                            <button type="button" class="list-group-item list-group-item-action usuario-item" data-nombre="{{ u.nombre_completo | lower }}" data-matricula="{{ u.matricula | lower }}" onclick="seleccionarUsuario('{{ u.id }}', '{{ u.matricula }} - {{ u.nombre_completo }}', 'create_id_reportado', 'create_search_reportado', 'dropdown_create_reportado')">
+                                {{ u.matricula }} - {{ u.nombre_completo }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Motivo del reporte <span class="text-danger">*</span></label>
+                        <select name="id_motivo_reporte" class="form-select" required>
+                            <option value="">-- Seleccione un motivo --</option>
+                            {% for m in motivos %}
+                            <option value="{{ m.id }}">{{ m.nombre }} (Gravedad: {{ m.gravedad }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Motivo personalizado/notas</label>
+                        <textarea name="motivo_personalizado" class="form-control" rows="3" placeholder="Detalla el problema..."></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">ID del viaje<span class="text-danger">*</span></label>
+                        <input type="number" name="id_viaje" class="form-control" placeholder="Ej: 1450" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Registrar reporte</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .cursor-pointer { cursor: pointer; }
+    .cursor-pointer:hover { background-color: rgba(0,0,0,0.05); }
+</style>
+
+<script>
+function abrirDetalleReporte(modalId, event) {
+    if (event.target.closest('.action-btn')) {
+        return; 
+    }
+    const modalElement = document.getElementById(modalId);
+    const modal = new bootstrap.Modal(modalElement);
+    modal.show();
+}
+
+function filtrarDropdownUsuarios(texto, dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    const items = dropdown.querySelectorAll('.usuario-item');
+    const busqueda = texto.toLowerCase().trim();
+    
+    if (busqueda.length === 0) {
+        dropdown.classList.add('d-none');
+        return;
+    }
+    
+    dropdown.classList.remove('d-none');
+    let coincidencias = 0;
+    
+    items.forEach(item => {
+        const nombre = item.getAttribute('data-nombre');
+        const matricula = item.getAttribute('data-matricula');
+        if (nombre.includes(busqueda) || matricula.includes(busqueda)) {
+            item.style.display = 'block';
+            coincidencias++;
+        } else {
+            item.style.display = 'none';
+        }
+    });
+
+    if (coincidencias === 0) {
+        dropdown.classList.add('d-none');
+    }
+}
+
+function seleccionarUsuario(id, textoVisible, inputHiddenId, inputVisibleId, dropdownId) {
+    document.getElementById(inputHiddenId).value = id;
+    document.getElementById(inputVisibleId).value = textoVisible;
+    document.getElementById(dropdownId).classList.add('d-none');
+}
+
+document.addEventListener('click', function(e) {
+    if(!e.target.closest('.position-relative')) {
+        document.querySelectorAll('.list-group.position-absolute').forEach(el => {
+            el.classList.add('d-none');
+        });
+    }
+});
+
+function aplicarFiltrosReportes() {
+    const busqueda = document.getElementById("filtroBusqueda").value.toLowerCase();
+    const modoBusqueda = document.getElementById("filtroModoBusqueda").value;
+    const fechaInicio = document.getElementById("filtroFechaInicio").value;
+    const fechaFin = document.getElementById("filtroFechaFin").value;
+    const orden = document.getElementById("filtroOrden").value;
+
+    const tbody = document.getElementById("tbodyReportes");
+    const filas = Array.from(tbody.querySelectorAll("tr.fila-reporte"));
+    
+    let filasVisibles = 0;
+
+    filas.forEach(fila => {
+        const fRepNombre = fila.getAttribute("data-reportador-nombre");
+        const fRepMatricula = fila.getAttribute("data-reportador-matricula");
+        const fRdoNombre = fila.getAttribute("data-reportado-nombre");
+        const fRdoMatricula = fila.getAttribute("data-reportado-matricula");
+        const fFecha = fila.getAttribute("data-fecha");
+
+        let cumpleBusqueda = false;
+        
+        if (modoBusqueda === "ambos") {
+            cumpleBusqueda = fRepNombre.includes(busqueda) || fRepMatricula.includes(busqueda) || 
+                             fRdoNombre.includes(busqueda) || fRdoMatricula.includes(busqueda);
+        } else if (modoBusqueda === "reportador") {
+            cumpleBusqueda = fRepNombre.includes(busqueda) || fRepMatricula.includes(busqueda);
+        } else if (modoBusqueda === "reportado") {
+            cumpleBusqueda = fRdoNombre.includes(busqueda) || fRdoMatricula.includes(busqueda);
+        }
+
+        let cumpleFecha = true;
+        if (fechaInicio && fFecha < fechaInicio) cumpleFecha = false;
+        if (fechaFin && fFecha > fechaFin) cumpleFecha = false;
+
+        if (cumpleBusqueda && cumpleFecha) {
+            fila.style.display = "";
+            filasVisibles++;
+        } else {
+            fila.style.display = "none";
+        }
+    });
+
+    const filaSinResultados = document.getElementById("filaSinResultados");
+    if (filaSinResultados) {
+        filaSinResultados.style.display = (filasVisibles === 0 && filas.length > 0) ? "" : "none";
+    }
+
+    if (filas.length > 0) {
+        filas.sort((a, b) => {
+            const dateA = new Date(a.getAttribute("data-fecha") || "1970-01-01");
+            const dateB = new Date(b.getAttribute("data-fecha") || "1970-01-01");
+            return orden === "fecha_desc" ? (dateB - dateA) : (dateA - dateB);
+        });
+        filas.forEach(fila => tbody.appendChild(fila));
+    }
+}
+</script>
 {% endblock %}

@@ -5,7 +5,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 from typing import List, Optional
+from datetime import date
 from data.database import getDB
 from data.models import Usuario, Rol, RolUsuario, Conductor, Vehiculo, TarjetaPasajero
 from models import schemas
@@ -43,46 +45,12 @@ def iniciarSesion(form_data: OAuth2PasswordRequestForm = Depends(), db: Session 
     rol_principal = usuario.roles[0].rol.nombre if usuario.roles else "Pasajero"
     token = createAccessToken(data = {"sub": str(usuario.id), "role": rol_principal})
     return {
-<<<<<<< Updated upstream
-        "access_token": token,
-=======
         "access_token": token, 
->>>>>>> Stashed changes
         "token_type": "bearer",
         "role": rol_principal,
         "usuario_id": usuario.id,
         "nombre_completo": usuario.nombre_completo
     }
-<<<<<<< Updated upstream
-
-@router.post("/cambiar-rol", summary = "Intercambiar rol activo y generar nuevo token")
-def cambiarRol(datos: dict, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    nuevo_rol = datos.get("nuevo_rol")
-    ROLES_VALIDOS = ["Pasajero", "Conductor", "Administrador", "Superadministrador"]
-    if nuevo_rol not in ROLES_VALIDOS:
-        raise HTTPException(status_code = 400, detail = f"Rol no válido. Opciones: {ROLES_VALIDOS}")
-    user_id = payload.get("sub")
-    usuario = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
-    if not usuario:
-        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
-    
-    # Si es Conductor, verificar que el usuario tenga perfil de conductor registrado
-    if nuevo_rol == "Conductor":
-        conductor = db.query(Conductor).filter(Conductor.id_usuario == usuario.id).first()
-        if not conductor:
-            raise HTTPException(status_code = 403, detail = "No tienes un perfil de conductor registrado. Registra tu perfil de conductor primero.")
-
-    # Emitir nuevo token con el rol actualizado
-    token = createAccessToken(data = {"sub": str(usuario.id), "role": nuevo_rol})
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "role": nuevo_rol,
-        "usuario_id": usuario.id,
-        "nombre_completo": usuario.nombre_completo
-    }
-=======
->>>>>>> Stashed changes
 
 
 # --------------------------------
@@ -97,27 +65,15 @@ def crearUsuario(usuario_in: schemas.UsuarioCreate, db: Session = Depends(getDB)
     ).first()
     if existe:
         raise HTTPException(status_code = 400, detail = "La matrícula o correo ya están registrados")
-<<<<<<< Updated upstream
-    from security.auth import hashPassword
-    nuevo_usuario = Usuario(
-        nombre_completo = usuario_in.nombre_completo,
-        matricula = usuario_in.matricula,
-        correo_institucional = usuario_in.correo_institucional,
-=======
     nuevo_usuario = Usuario(
         nombre_completo = usuario_in.nombre_completo, 
         matricula = usuario_in.matricula, 
         correo_institucional = usuario_in.correo_institucional, 
->>>>>>> Stashed changes
         contrasena_hash = hashPassword(usuario_in.contrasena_raw),
         url_foto_perfil = usuario_in.url_foto_perfil or "cardenal_upq.png"
     )
     db.add(nuevo_usuario)
     db.flush()
-<<<<<<< Updated upstream
-    # Asignar rol Pasajero por defecto (id_rol=1, id_estatus=5 = Activo)
-=======
->>>>>>> Stashed changes
     nuevo_rol = RolUsuario(id_usuario = nuevo_usuario.id, id_rol = 1, id_estatus = 5)
     db.add(nuevo_rol)
     db.commit()
@@ -129,37 +85,34 @@ def obtenerUsuarios(skip: int = 0, limit: int = 100, db: Session = Depends(getDB
     usuarios = db.query(Usuario).offset(skip).limit(limit).all()
     return usuarios
 
-<<<<<<< Updated upstream
-=======
-@router.get("/me", response_model = schemas.UsuarioResponse, summary = "Obtener usuario autenticado")
-def obtenerUsuarioActual(db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    usuario_id = int(payload.get("sub"))
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
-    return usuario
-
->>>>>>> Stashed changes
-@router.get("/buscar", response_model = List[schemas.UsuarioResponse], summary = "Buscar usuario(s) con filtros dinámicos")
+@router.get("/buscar", response_model = List[schemas.UsuarioResponse])
 def buscarUsuarios(
-    nombre: Optional[str] = Query(None, description = "Filtrar por nombre completo (coincidencia parcial)"), 
-    matricula: Optional[str] = Query(None, description = "Filtrar por matrícula (coincidencia parcial)"), 
-    correo: Optional[str] = Query(None, description = "Filtrar por correo institucional (coincidencia parcial)"), 
+    busqueda: Optional[str] = Query(None), 
+    rol: Optional[str] = Query(None), 
+    fecha_inicio: Optional[date] = Query(None), 
+    fecha_fin: Optional[date] = Query(None), 
     skip: int = 0, 
     limit: int = 100, 
     db: Session = Depends(getDB), 
     payload: dict = Depends(verifyToken)
 ):
-    query = db.query(Usuario)
-    if nombre:
-        query = query.filter(Usuario.nombre_completo.ilike(f"%{nombre}%"))
-    if matricula:
-        query = query.filter(Usuario.matricula.ilike(f"%{matricula}%"))
-    if correo:
-        query = query.filter(Usuario.correo_institucional.ilike(f"%{correo}%"))
-    return query.offset(skip).limit(limit).all()
+    current_role = payload.get("role")
+    query = db.query(Usuario).outerjoin(RolUsuario).outerjoin(Rol)
+    if busqueda:
+        query = query.filter(
+            (Usuario.nombre_completo.ilike(f"%{busqueda}%")) | 
+            (Usuario.matricula.ilike(f"%{busqueda}%"))
+        )
+    if rol:
+        query = query.filter(Rol.nombre == rol)
+    if current_role == "Administrador":
+        query = query.filter((Rol.nombre != "Superadministrador") | (RolUsuario.id_rol.is_(None)))
+    if fecha_inicio:
+        query = query.filter(func.date(Usuario.fecha_hora_registro) >= fecha_inicio)
+    if fecha_fin:
+        query = query.filter(func.date(Usuario.fecha_hora_registro) <= fecha_fin)
+    return query.distinct().order_by(Usuario.fecha_hora_registro.desc()).offset(skip).limit(limit).all()
 
-<<<<<<< Updated upstream
 
 # --------------------------------------------------------------
 # | ENDPOINTS DE ELIMINACIÓN Y REACTIVACIÓN LÓGICA DE USUARIOS |
@@ -201,8 +154,6 @@ def obtenerPerfilUsuarioActual(db: Session = Depends(getDB), payload: dict = Dep
         raise HTTPException(status_code = status.HTTP_404_NOT_FOUND, detail = "Usuario no encontrado")
     return usuario
 
-=======
->>>>>>> Stashed changes
 @router.get("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Obtener usuario por ID")
 def obtenerUsuarioPorId(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
@@ -249,7 +200,6 @@ def eliminarUsuario(
     db.commit()
 
 
-<<<<<<< Updated upstream
 # ------------------------------------
 # | CONDUCTORES Y VEHÍCULOS          |
 # ------------------------------------
@@ -274,37 +224,6 @@ def registrarConductor(
     nuevo_conductor = Conductor(**conductor_in.model_dump())
     db.add(nuevo_conductor)
     db.flush()
-    # Actualizar rol a Conductor (id_rol=2)
-=======
-# --------------------------------------------------------------
-# | ENDPOINTS DE ELIMINACIÓN Y REACTIVACIÓN LÓGICA DE USUARIOS |
-# --------------------------------------------------------------
-
-@router.patch("/usuarios/{usuario_id}/eliminacion-logica", summary = "Eliminar usuario de manera lógica")
-def eliminarUsuarioLogica(
-    usuario_id: int, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(requireRole(["Administrador", "Superadministrador"]))
-):
-    registro = db.query(RolUsuario).filter(RolUsuario.id_usuario == usuario_id).first()
-    if not registro:
-        raise HTTPException(status_code = 404, detail = "Configuración de rol y estatus no encontrada para este usuario")
-    registro.id_estatus = 6
-    db.commit()
-    return {"status": "ok", "message": f"Usuario {usuario_id} eliminado de manera lógica con éxito"}
-
-@router.patch("/usuarios/{usuario_id}/reactivacion-logica", summary = "Reactivar usuario eliminado de manera lógica")
-def reactivarUsuario(
-    usuario_id: int, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(requireRole(["Administrador", "Superadministrador"]))
-):
-    registro = db.query(RolUsuario).filter(RolUsuario.id_usuario == usuario_id).first()
-    if not registro:
-        raise HTTPException(status_code = 404, detail = "Configuración de rol y estatus no encontrada para este usuario")
-    registro.id_estatus = 1
-    db.commit()
-    return {"status": "ok", "message": f"Usuario {usuario_id} reactivado con éxito"}
 
 
 # -----------------------------------
@@ -321,7 +240,6 @@ def crearConductor(conductor_in: schemas.ConductorCreate, db: Session = Depends(
     nuevo_conductor = Conductor(**conductor_in.model_dump())
     db.add(nuevo_conductor)
     db.flush()
->>>>>>> Stashed changes
     rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == conductor_in.id_usuario).first()
     if rol_usuario:
         rol_usuario.id_rol = 2
@@ -349,22 +267,6 @@ def buscarConductores(
         query = query.filter(Conductor.licencia_conducir.ilike(f"%{numero_licencia}%"))
     return query.offset(skip).limit(limit).all()
 
-<<<<<<< Updated upstream
-@router.get("/conductores/usuario/{usuario_id}", response_model = schemas.ConductorResponse, summary = "Obtener conductor por ID de usuario")
-def obtenerConductorPorUsuario(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    conductor = db.query(Conductor).filter(Conductor.id_usuario == usuario_id).first()
-    if not conductor:
-        raise HTTPException(status_code = 404, detail = "Conductor no encontrado")
-    return conductor
-
-@router.get("/conductores/{conductor_id}", response_model = schemas.ConductorResponse, summary = "Obtener conductor por ID de conductor")
-def obtenerConductorPorId(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    # Busca EXCLUSIVAMENTE por ID de conductor (cgo_usu.conductores.id)
-    # Para buscar por id_usuario usa: GET /conductores/usuario/{usuario_id}
-    conductor = db.query(Conductor).filter(Conductor.id == conductor_id).first()
-    if not conductor:
-        raise HTTPException(status_code = 404, detail = "Conductor no encontrado")
-=======
 @router.get("/conductores/{usuario_id}", response_model = schemas.ConductorResponse, summary = "Obtener perfil de conductor por ID de usuario")
 def obtenerConductorPorUsuario(
     usuario_id: int,
@@ -376,7 +278,6 @@ def obtenerConductorPorUsuario(
     ).filter(Conductor.id_usuario == usuario_id).first()
     if not conductor:
         raise HTTPException(status_code = 404, detail = "Perfil de conductor no encontrado")
->>>>>>> Stashed changes
     return conductor
 
 @router.patch("/conductores/{conductor_id}", response_model = schemas.ConductorResponse, summary = "Actualizar conductor por ID")
@@ -405,7 +306,6 @@ def eliminarConductor(conductor_id: int, db: Session = Depends(getDB), payload: 
 # | OPERACIONES CRUD DE VEHÍCULOS |
 # ---------------------------------
 
-@router.post("/vehiculos", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo")
 @router.post("/vehiculos/", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo", include_in_schema = False)
 def crearVehiculo(vehiculo_in: schemas.VehiculoCreate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     conductor = db.query(Conductor).filter(Conductor.id == vehiculo_in.id_conductor).first()
@@ -424,7 +324,6 @@ def crearVehiculo(vehiculo_in: schemas.VehiculoCreate, db: Session = Depends(get
     db.refresh(nuevo_vehiculo)
     return nuevo_vehiculo
 
-@router.get("/vehiculos", response_model = List[schemas.VehiculoResponse], summary = "Obtener todos los vehículos")
 @router.get("/vehiculos/", response_model = List[schemas.VehiculoResponse], summary = "Obtener todos los vehículos", include_in_schema = False)
 def obtenerVehiculos(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     return db.query(Vehiculo).offset(skip).limit(limit).all()
@@ -451,21 +350,12 @@ def buscarVehiculos(
         query = query.filter(Vehiculo.anio == anio)
     return query.offset(skip).limit(limit).all()
 
-<<<<<<< Updated upstream
-@router.get("/vehiculos/conductor/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor por ID")
-def obtenerVehiculosPorConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(Vehiculo).filter(Vehiculo.id_conductor == conductor_id).all()
-
-@router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos por ID de conductor")
-def obtenerVehiculosPorIdConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-=======
 @router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor")
 def obtenerVehiculosConductor(
     conductor_id: int,
     db: Session = Depends(getDB),
     payload: dict = Depends(verifyToken)
 ):
->>>>>>> Stashed changes
     return db.query(Vehiculo).filter(Vehiculo.id_conductor == conductor_id).all()
 
 @router.patch("/vehiculos/{vehiculo_id}", response_model = schemas.VehiculoResponse, summary = "Actualizar vehículo por ID")

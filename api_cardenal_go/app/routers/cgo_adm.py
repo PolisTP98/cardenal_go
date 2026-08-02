@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from data.database import getDB
-from data.models import Calificacion, Reporte, Sancion
+from data.models import Calificacion, Reporte, Sancion, Usuario
 from models import schemas
 from security.auth import verifyToken, requireRole, verifyResourceOwnership
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF
@@ -166,16 +166,24 @@ def eliminarReporte(reporte_id: int, db: Session = Depends(getDB), payload: dict
 # | OPERACIONES CRUD DE SANCIONES |
 # ---------------------------------
 
-@router.post("/sanciones", response_model = schemas.SancionResponse, status_code = status.HTTP_201_CREATED, summary = "Aplicar sanción a usuario")
+@router.post("/sanciones", response_model = schemas.SancionResponse, status_code = status.HTTP_201_CREATED)
 def aplicarSancion(sancion_in: schemas.SancionCreate, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Administrador", "Superadministrador"]))):
     verifyResourceOwnership(payload.get("sub"), str(sancion_in.id_administrador), is_admin = True)
-    nueva_sancion = Sancion(**sancion_in.model_dump())
+    usuario = db.query(Usuario).filter(Usuario.id == sancion_in.id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+    if sancion_in.nueva_calificacion_pasajero is not None:
+        usuario.calificacion_pasajero = sancion_in.nueva_calificacion_pasajero
+    if sancion_in.nueva_calificacion_conductor is not None:
+        usuario.calificacion_conductor = sancion_in.nueva_calificacion_conductor
+    sancion_data = sancion_in.model_dump(exclude={"nueva_calificacion_pasajero", "nueva_calificacion_conductor"})
+    nueva_sancion = Sancion(**sancion_data)
     db.add(nueva_sancion)
     db.commit()
     db.refresh(nueva_sancion)
     return nueva_sancion
 
-@router.get("/sanciones", response_model = List[schemas.SancionResponse], summary = "Obtener todas las sanciones")
+@router.get("/sanciones", response_model = List[schemas.SancionResponse])
 def obtenerSanciones(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Administrador", "Superadministrador"]))):
     return db.query(Sancion).offset(skip).limit(limit).all()
 

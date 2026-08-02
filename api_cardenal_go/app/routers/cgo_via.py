@@ -50,27 +50,12 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
     else:
         datos_viaje["ubicacion_destino"] = f"SRID=4326;POINT({viaje_in.ubicacion_destino.longitude} {viaje_in.ubicacion_destino.latitude})"
     datos_viaje["asientos_disponibles"] = viaje_in.asientos_totales
-<<<<<<< Updated upstream
-    # GeoPoint.coordinates = [longitude, latitude]
-    datos_viaje["ubicacion_inicio"] = f"POINT({viaje_in.ubicacion_inicio.coordinates[0]} {viaje_in.ubicacion_inicio.coordinates[1]})"
-    datos_viaje["ubicacion_destino"] = f"POINT({viaje_in.ubicacion_destino.coordinates[0]} {viaje_in.ubicacion_destino.coordinates[1]})"
-=======
->>>>>>> Stashed changes
     nuevo_viaje = Viaje(**datos_viaje)
     db.add(nuevo_viaje)
     db.commit()
     db.refresh(nuevo_viaje)
     return nuevo_viaje
 
-<<<<<<< Updated upstream
-@router.get("/", response_model=List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
-def obtenerViajes(
-    skip: int = 0,
-    limit: int = 100,
-    id_estatus: Optional[int] = Query(None, description="Filtrar por estatus (1=Programado, 2=En curso)"),
-    fecha: Optional[str] = Query(None, description="Filtrar por fecha YYYY-MM-DD"),
-    db: Session = Depends(getDB),
-=======
 @router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
 def obtenerViajes(
     skip: int = 0, 
@@ -78,52 +63,17 @@ def obtenerViajes(
     id_estatus: Optional[int] = Query(None, description = "Filtrar por estatus (1=Programado, 2=En curso)"),
     fecha: Optional[str] = Query(None, description = "Filtrar por fecha YYYY-MM-DD"),
     db: Session = Depends(getDB), 
->>>>>>> Stashed changes
     payload: dict = Depends(verifyToken)
 ):
     query = db.query(Viaje).options(
         joinedload(Viaje.vehiculo).joinedload(Vehiculo.conductor).joinedload(Conductor.usuario),
         joinedload(Viaje.estatus)
     )
-<<<<<<< Updated upstream
-    user_id = payload.get("sub")
-    user_role = payload.get("role")
-
-    # Si el usuario consulta en modo Pasajero, excluir los viajes creados por él mismo como Conductor
-    if user_role == "Pasajero" and user_id:
-        query = query.join(Viaje.vehiculo).join(Vehiculo.conductor).filter(Conductor.id_usuario != int(user_id))
-
-=======
->>>>>>> Stashed changes
     if id_estatus:
         query = query.filter(Viaje.id_estatus == id_estatus)
     if fecha:
         query = query.filter(Viaje.fecha == fecha)
-<<<<<<< Updated upstream
-    viajes = query.offset(skip).limit(limit).all()
-    return viajes
-
-@router.get("/conductor/{usuario_id}", response_model=List[schemas.ViajeResponse], summary = "Obtener viajes del conductor por ID de usuario")
-def obtenerViajesConductor(
-    usuario_id: int,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    conductor = db.query(Conductor).filter(Conductor.id_usuario == usuario_id).first()
-    if not conductor:
-        raise HTTPException(status_code = 404, detail = "Perfil de conductor no encontrado")
-    vehiculo_ids = [v.id for v in conductor.vehiculos]
-    if not vehiculo_ids:
-        return []
-    viajes = db.query(Viaje).options(
-        joinedload(Viaje.vehiculo),
-        joinedload(Viaje.estatus),
-        joinedload(Viaje.solicitudes)
-    ).filter(Viaje.id_vehiculo.in_(vehiculo_ids)).order_by(Viaje.fecha.desc()).all()
-    return viajes
-=======
     return query.offset(skip).limit(limit).all()
->>>>>>> Stashed changes
 
 @router.get("/buscar", response_model = List[schemas.ViajeResponse], summary = "Buscar viaje(s) con filtros dinámicos")
 def buscarViajes(
@@ -170,15 +120,7 @@ def obtenerViajesConductor(
     return viajes
 
 @router.get("/{viaje_id}", response_model = schemas.ViajeResponse, summary = "Obtener viaje por ID")
-<<<<<<< Updated upstream
-def obtenerViajePorId(
-    viaje_id: int,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-=======
 def obtenerViajePorId(viaje_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
->>>>>>> Stashed changes
     viaje = db.query(Viaje).options(
         joinedload(Viaje.vehiculo).joinedload(Vehiculo.conductor).joinedload(Conductor.usuario),
         joinedload(Viaje.estatus)
@@ -216,8 +158,6 @@ def eliminarViaje(viaje_id: int, db: Session = Depends(getDB), payload: dict = D
     db.commit()
 
 
-<<<<<<< Updated upstream
-=======
 # ---------------------------------------------
 # | OPERACIONES CRUD DE SOLICITUDES DE VIAJES |
 # ---------------------------------------------
@@ -353,7 +293,6 @@ def eliminarSolicitud(solicitud_id: int, db: Session = Depends(getDB), payload: 
     db.delete(solicitud)
     db.commit()
 
->>>>>>> Stashed changes
 
 # ----------------------------------------------
 # | OPERACIONES CRUD DE PAGOS Y TRANSFERENCIAS |
@@ -435,15 +374,11 @@ def crearHistorialUbicacion(historial_in: schemas.HistorialUbicacionViajeCreate,
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
     verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
     datos_historial = historial_in.model_dump()
-<<<<<<< Updated upstream
-    datos_historial["ubicacion"] = f"POINT({historial_in.ubicacion.coordinates[0]} {historial_in.ubicacion.coordinates[1]})"
-=======
     ubicacion = datos_historial["ubicacion"]
     if isinstance(ubicacion, dict) and "coordinates" in ubicacion:
         datos_historial["ubicacion"] = f"SRID=4326;POINT({ubicacion['coordinates'][0]} {ubicacion['coordinates'][1]})"
     else:
         datos_historial["ubicacion"] = f"SRID=4326;POINT({historial_in.ubicacion.longitude} {historial_in.ubicacion.latitude})"
->>>>>>> Stashed changes
     nuevo_historial = HistorialUbicacionViaje(**datos_historial)
     db.add(nuevo_historial)
     db.commit()
