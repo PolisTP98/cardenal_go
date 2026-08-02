@@ -11,11 +11,11 @@ import LocationSearchInput from '../components/LocationSearchInput';
 import MapaRutas from '../components/MapaRutas';
 
 export default function SearchTripScreen({ navigation }) {
-  const [origen, setOrigen] = useState('UPQ');
+  const [origen, setOrigen] = useState('');
   const [destino, setDestino] = useState('');
-  const [origenValid, setOrigenValid] = useState(true);
+  const [origenValid, setOrigenValid] = useState(false);
   const [destinoValid, setDestinoValid] = useState(false);
-  const [origenCoords, setOrigenCoords] = useState({ latitude: 20.5891, longitude: -100.4376 });
+  const [origenCoords, setOrigenCoords] = useState(null);
   const [destinoCoords, setDestinoCoords] = useState(null);
   const [selectingTarget, setSelectingTarget] = useState('destino');
   

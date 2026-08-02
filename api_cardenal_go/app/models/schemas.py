@@ -334,13 +334,8 @@ class VehiculoCreate(BaseModel):
     placa: str = Field(..., max_length = 15)
     color: str = Field(..., max_length = 30)
     modelo: str = Field(..., max_length = 50)
-<<<<<<< Updated upstream
-    anio: int
-    fotos: Any = Field(...)
-=======
     anio: int = Field(..., gt=1990, le = datetime.now().year + 1)
     fotos: Dict[str, Any] = Field(..., min_length = 1)
->>>>>>> Stashed changes
 
 class VehiculoUpdate(BaseModel):
     color: Optional[str] = Field(None, max_length = 30)
@@ -402,8 +397,24 @@ class ViajeCreate(BaseModel):
     @field_validator("fecha")
     @classmethod
     def validarViajeFuturo(cls, v: date) -> date:
-        if v < date.today():
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Mexico_City")
+        hoy_local = datetime.now(tz).date()
+        
+        if v < hoy_local:
             raise ValueError("No se pueden programar viajes en el pasado")
+        return v
+
+    @field_validator("hora_inicio")
+    @classmethod
+    def validarHoraFutura(cls, v: time, info: Any) -> time:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Mexico_City")
+        now_local = datetime.now(tz)
+        
+        if "fecha" in info.data and info.data["fecha"] == now_local.date():
+            if v < now_local.time():
+                raise ValueError("La hora de inicio no puede ser en el pasado para viajes de hoy")
         return v
 
 class ViajeUpdate(BaseModel):

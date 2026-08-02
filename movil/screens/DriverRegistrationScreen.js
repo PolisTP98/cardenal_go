@@ -11,6 +11,7 @@ import LoadingOverlay from '../components/LoadingOverlay';
 import Card from '../components/Card';
 import { useAuth } from '../src/context/AuthContext';
 import { registrarConductor, registrarVehiculo } from '../src/api/usuariosApi';
+import VehicleColorPicker from '../components/VehicleColorPicker';
 
 export default function DriverRegistrationScreen({ navigation }) {
   const { user, updateRole } = useAuth();
@@ -197,11 +198,9 @@ export default function DriverRegistrationScreen({ navigation }) {
                 value={plate}
                 onChangeText={setPlate}
               />
-              <CustomInput
-                label="Color"
-                placeholder="Ej. Rojo"
-                value={color}
-                onChangeText={setColor}
+              <VehicleColorPicker
+                selectedColor={color}
+                onSelectColor={setColor}
               />
               <View style={styles.row}>
                 <View style={{ flex: 1, marginRight: 8 }}>

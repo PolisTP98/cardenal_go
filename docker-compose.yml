@@ -88,7 +88,6 @@ services:
     networks:
       - cardenal_go_network
 
-<<<<<<< Updated upstream
   # ---------------------------------------
   # | (4) MICROSERVICIO IA (Ridesharing)  |
   # ---------------------------------------
@@ -190,12 +189,10 @@ services:
     networks:
       - cardenal_go_network
     restart: unless-stopped
-=======
 
   # ------------------------------------------------------------------
-  # | (4) FRONTEND PARA SUPERADMINISTRADORES/ADMINISTRADORES (Flask) |
+  # | (6) FRONTEND PARA SUPERADMINISTRADORES/ADMINISTRADORES (Flask) |
   # ------------------------------------------------------------------
-
   frontend:
     build:
       context: ./web
@@ -212,4 +209,3 @@ services:
       - backend
     networks:
       - cardenal_go_network
->>>>>>> Stashed changes
