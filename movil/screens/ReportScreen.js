@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
@@ -10,7 +11,7 @@ export default function ReportScreen({ navigation }) {
     const reasons = ['Comportamiento inadecuado', 'Incumplimiento de ruta', 'Problemas con el vehículo', 'Seguridad'];
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
         <TopHeader title="Reportar incidente" showBack onBackPress={() => navigation.goBack()} />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -72,7 +73,7 @@ export default function ReportScreen({ navigation }) {
               </View>
           </ScrollView>
         </KeyboardAvoidingView>
-        </View>
+        </SafeAreaView>
     );
 }
 

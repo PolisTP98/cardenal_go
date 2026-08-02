@@ -19,9 +19,7 @@ export default function MyTripsScreen({ navigation }) {
   const fetchTrips = async () => {
     try {
       const data = await getMisViajes(user.id);
-      // Filter out only finished (3) or cancelled (4) trips for history
-      const history = data.filter(trip => trip.id_estatus > 2);
-      setViajes(history);
+      setViajes(data);
     } catch (error) {
       console.error('Error fetching driver history:', error);
     } finally {
@@ -70,8 +68,8 @@ export default function MyTripsScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TopHeader title="Historial de Viajes (Conductor)" showBack onBackPress={() => navigation.goBack()} />
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <TopHeader title="Mis Viajes" />
 
       {loading ? (
         <View style={styles.loadingContainer}>

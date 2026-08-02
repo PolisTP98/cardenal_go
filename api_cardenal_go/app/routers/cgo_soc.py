@@ -2,13 +2,16 @@
 # | IMPORTAR MÓDULOS NECESARIOS |
 # -------------------------------
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Form, File, UploadFile
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from data.database import getDB
 from data.models import Amigo, Chat, MensajeChat, Usuario
 from models import schemas
 from security.auth import verifyToken, requireRole, verifyResourceOwnership
+from utils.imagenes import guardarImagen, RUTA_CHAT, _REL_CHAT
+import uuid
+import os
 
 
 # ---------------------------------------
@@ -283,19 +286,56 @@ def obtenerMensajesChat(
 # =========================
 
 @router.post("/mensajes", response_model = schemas.MensajeChatResponse, status_code = status.HTTP_201_CREATED, summary = "Enviar mensaje en un chat")
-def enviarMensaje(
-    msg_in: schemas.MensajeChatCreate,
+async def enviarMensaje(
+    id_chat: int = Form(...),
+    id_emisor: int = Form(...),
+    id_receptor: int = Form(...),
+    contenido: Optional[str] = Form(None),
+    imagen: Optional[UploadFile] = File(None),
     db: Session = Depends(getDB),
     payload: dict = Depends(verifyToken)
 ):
-    chat = db.query(Chat).filter(Chat.id == msg_in.id_chat).first()
+    if not contenido and not imagen:
+        raise HTTPException(status_code = 400, detail = "Debe proporcionar contenido o una imagen.")
+
+    chat = db.query(Chat).filter(Chat.id == id_chat).first()
     if not chat:
         raise HTTPException(status_code = 404, detail = "Chat no encontrado")
 
-    nuevo_mensaje = MensajeChat(**msg_in.model_dump())
+    nuevo_mensaje = MensajeChat(
+        id_chat = id_chat,
+        id_emisor = id_emisor,
+        id_receptor = id_receptor,
+        contenido = contenido
+    )
+
+    url_imagen = None
+    if imagen and imagen.filename:
+        try:
+            nombre_unico = f"chat_{id_chat}_msg_{uuid.uuid4().hex}"
+            # guardarImagen expects absolute path for carpeta_destino
+            ruta_relativa = await guardarImagen(imagen, RUTA_CHAT, nombre_unico)
+            url_imagen = ruta_relativa
+            nuevo_mensaje.url_imagen = url_imagen
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code = 400, detail = str(e))
+
     db.add(nuevo_mensaje)
-    db.commit()
-    db.refresh(nuevo_mensaje)
+    try:
+        db.commit()
+        db.refresh(nuevo_mensaje)
+    except Exception as e:
+        db.rollback()
+        # Clean up image if DB commit fails
+        if url_imagen:
+            from utils.imagenes import BASE_IMAGENES
+            filename = os.path.basename(url_imagen)
+            ruta_absoluta = os.path.join(RUTA_CHAT, filename)
+            if os.path.exists(ruta_absoluta):
+                os.remove(ruta_absoluta)
+        raise HTTPException(status_code = 500, detail = f"Error al guardar el mensaje: {e}")
 
     msg_completo = db.query(MensajeChat).options(
         joinedload(MensajeChat.emisor)

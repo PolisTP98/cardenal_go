@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
 import CustomInput from '../components/CustomInput';
@@ -18,16 +20,36 @@ export default function DriverRegistrationScreen({ navigation }) {
   // Form State
   const [phone, setPhone] = useState('');
   const [license, setLicense] = useState('');
+  const [facePhoto, setFacePhoto] = useState(null);
   
   const [plate, setPlate] = useState('');
   const [color, setColor] = useState('');
   const [model, setModel] = useState('');
   const [year, setYear] = useState('');
+  const [vehiclePhotos, setVehiclePhotos] = useState([]);
+
+  const pickImage = async (isVehicle = false) => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: !isVehicle,
+      aspect: isVehicle ? [4, 3] : [1, 1],
+      quality: 0.7,
+      allowsMultipleSelection: isVehicle,
+    });
+
+    if (!result.canceled) {
+      if (isVehicle) {
+        setVehiclePhotos([...vehiclePhotos, ...result.assets]);
+      } else {
+        setFacePhoto(result.assets[0]);
+      }
+    }
+  };
 
   const nextStep = () => {
     if (step === 1) {
-      if (!phone || !license) {
-        Alert.alert('Campos faltantes', 'Por favor ingresa tu teléfono y licencia.');
+      if (!phone || !license || !facePhoto) {
+        Alert.alert('Campos faltantes', 'Por favor ingresa tu teléfono, licencia y una fotografía reciente de tu rostro.');
         return;
       }
       if (phone.length < 10) {
@@ -39,8 +61,8 @@ export default function DriverRegistrationScreen({ navigation }) {
   };
 
   const handleRegistration = async () => {
-    if (!plate || !color || !model || !year) {
-      Alert.alert('Campos faltantes', 'Por favor completa todos los campos del vehículo.');
+    if (!plate || !color || !model || !year || !vehiclePhotos) {
+      Alert.alert('Campos faltantes', 'Por favor completa todos los campos del vehículo, incluyendo fotografías.');
       return;
     }
 
@@ -53,24 +75,35 @@ export default function DriverRegistrationScreen({ navigation }) {
     setLoading(true);
     try {
       // 1. Registrar Conductor
-      const conductorData = {
-        id_usuario: user.id,
-        telefono: phone,
-        licencia_conducir: license,
-        url_foto_ine: 'ine_placeholder.png', // INE dummy image
-      };
-      const conductor = await registrarConductor(conductorData);
+      const conductorFormData = new FormData();
+      conductorFormData.append('id_usuario', user.id);
+      conductorFormData.append('telefono', phone);
+      conductorFormData.append('licencia_conducir', license);
+      conductorFormData.append('foto_perfil', {
+        uri: facePhoto.uri,
+        name: facePhoto.fileName || `foto_perfil_${user.id}.jpg`,
+        type: 'image/jpeg',
+      });
+      
+      const conductor = await registrarConductor(conductorFormData);
 
       // 2. Registrar Vehículo
-      const vehiculoData = {
-        id_conductor: conductor.id,
-        placa: plate.toUpperCase(),
-        color,
-        modelo: model,
-        anio: numericYear,
-        fotos: ['car_placeholder.png'], // default car image
-      };
-      await registrarVehiculo(vehiculoData);
+      const vehiculoFormData = new FormData();
+      vehiculoFormData.append('id_conductor', conductor.id);
+      vehiculoFormData.append('placa', plate.toUpperCase());
+      vehiculoFormData.append('color', color);
+      vehiculoFormData.append('modelo', model);
+      vehiculoFormData.append('anio', numericYear);
+      
+      vehiclePhotos.forEach((photo, index) => {
+        vehiculoFormData.append('fotos', {
+          uri: photo.uri,
+          name: photo.fileName || `vehiculo_${index}.jpg`,
+          type: 'image/jpeg',
+        });
+      });
+
+      await registrarVehiculo(vehiculoFormData);
 
       // 3. Actualizar Rol en Contexto y Guardar, luego navegar al DriverDashboard
       await updateRole('Conductor', () => {
@@ -80,7 +113,7 @@ export default function DriverRegistrationScreen({ navigation }) {
             onPress: () => {
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'DriverDashboard' }],
+                routes: [{ name: 'MainTabs' }],
               });
             }
           }
@@ -143,6 +176,16 @@ export default function DriverRegistrationScreen({ navigation }) {
                 value={license}
                 onChangeText={setLicense}
               />
+              <Text style={styles.label}>Fotografía de Rostro</Text>
+              <TouchableOpacity style={styles.imagePickerBtn} onPress={() => pickImage(false)}>
+                <Ionicons name="camera" size={24} color={COLORS.primary} />
+                <Text style={styles.imagePickerText}>
+                  {facePhoto ? 'Cambiar fotografía' : 'Seleccionar fotografía'}
+                </Text>
+              </TouchableOpacity>
+              {facePhoto && (
+                <Image source={{ uri: facePhoto.uri }} style={styles.previewImage} />
+              )}
               <PrimaryButton title="Continuar" onPress={nextStep} style={styles.btn} />
             </Card>
           ) : (
@@ -179,6 +222,18 @@ export default function DriverRegistrationScreen({ navigation }) {
                   />
                 </View>
               </View>
+              <Text style={styles.label}>Fotografías del Vehículo</Text>
+              <TouchableOpacity style={styles.imagePickerBtn} onPress={() => pickImage(true)}>
+                <Ionicons name="images" size={24} color={COLORS.primary} />
+                <Text style={styles.imagePickerText}>Seleccionar fotografías</Text>
+              </TouchableOpacity>
+              {vehiclePhotos.length > 0 && (
+                <View style={styles.photoGrid}>
+                  {vehiclePhotos.map((photo, index) => (
+                    <Image key={index} source={{ uri: photo.uri }} style={styles.previewImageSmall} />
+                  ))}
+                </View>
+              )}
               <PrimaryButton title="Finalizar Registro" onPress={handleRegistration} style={styles.btn} />
             </Card>
           )}
@@ -229,8 +284,48 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   stepTextActive: {
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  imagePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 8,
+    borderStyle: 'dashed',
+    marginBottom: 16,
+  },
+  imagePickerText: {
     color: COLORS.primary,
     fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  previewImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  previewImageSmall: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
   },
   sectionTitle: {
     fontSize: 16,

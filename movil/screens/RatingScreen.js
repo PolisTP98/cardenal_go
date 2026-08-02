@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
@@ -10,7 +11,7 @@ export default function RatingScreen({ navigation }) {
     const [rating, setRating] = useState(0);
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
         <TopHeader title="Cardenal GO" showBack onBackPress={() => navigation.navigate('PassengerDashboard')} />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -64,7 +65,7 @@ export default function RatingScreen({ navigation }) {
               </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
-        </View>
+        </SafeAreaView>
     );
 }
 

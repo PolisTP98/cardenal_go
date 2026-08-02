@@ -6,12 +6,14 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
 from data.database import SessionLocal, engine
 from data.models import Base
 from registros_base import poblarBaseDeDatos
 from routers import cgo_usu, cgo_via, cgo_soc, cgo_adm, cgo_not
+from utils.imagenes import crearEstructuraCarpetas, BASE_IMAGENES
 
 
 # ----------------------------------------
@@ -46,6 +48,9 @@ async def lifespan(app: FastAPI):
 # -----------------------------------
 # | INICIALIZACIÓN DE LA APLICACIÓN |
 # -----------------------------------
+
+# Crear estructura de carpetas de imágenes si no existe, antes de instanciar o montar
+crearEstructuraCarpetas()
 
 app = FastAPI(title = "API Cardenal GO", lifespan = lifespan)
 
@@ -86,3 +91,10 @@ app.include_router(cgo_via.router)
 app.include_router(cgo_soc.router)
 app.include_router(cgo_adm.router)
 app.include_router(cgo_not.router)
+
+
+# -----------------------------------------------
+# | SERVIR ARCHIVOS DE IMAGEN ESTÁTICOS         |
+# -----------------------------------------------
+
+app.mount("/Imagenes", StaticFiles(directory = BASE_IMAGENES), name = "imagenes")

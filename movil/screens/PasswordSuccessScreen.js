@@ -1,4 +1,5 @@
 import React from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
@@ -6,7 +7,7 @@ import PrimaryButton from '../components/PrimaryButton';
 
 export default function PasswordSuccessScreen({ navigation }) {
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
         <View style={styles.iconContainer}>
             <Ionicons name="checkmark-circle" size={100} color={COLORS.success} />
         </View>
@@ -21,7 +22,7 @@ export default function PasswordSuccessScreen({ navigation }) {
             onPress={() => navigation.navigate('Login')} 
             style={styles.button}
         />
-        </View>
+        </SafeAreaView>
     );
 }
 

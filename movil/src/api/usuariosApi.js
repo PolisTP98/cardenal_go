@@ -27,8 +27,12 @@ export const getConductorByUsuario = async (usuarioId) => {
 };
 
 // POST /api/usu/conductores
-export const registrarConductor = async (datos) => {
-  const r = await apiClient.post('/api/usu/conductores', datos);
+export const registrarConductor = async (formData) => {
+  const r = await apiClient.post('/api/usu/conductores', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
   return r.data;
 };
 
@@ -39,7 +43,26 @@ export const getVehiculos = async (conductorId) => {
 };
 
 // POST /api/usu/vehiculos
-export const registrarVehiculo = async (datos) => {
-  const r = await apiClient.post('/api/usu/vehiculos', datos);
+export const registrarVehiculo = async (formData) => {
+  const r = await apiClient.post('/api/usu/vehiculos', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
   return r.data;
 };
+
+// PATCH /api/usu/me/foto-perfil
+export const actualizarFotoPerfil = async (imagenAsset) => {
+  const formData = new FormData();
+  formData.append('foto', {
+    uri: imagenAsset.uri,
+    name: imagenAsset.fileName || 'foto_perfil.jpg',
+    type: 'image/jpeg',
+  });
+  const r = await apiClient.patch('/api/usu/me/foto-perfil', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return r.data;
+};
+

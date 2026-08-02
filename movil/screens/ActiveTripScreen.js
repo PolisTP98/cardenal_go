@@ -1,4 +1,5 @@
 import React from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../components/Theme';
@@ -7,7 +8,7 @@ import PrimaryButton from '../components/PrimaryButton';
 
 export default function ActiveTripScreen({ navigation }) {
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
         <View style={styles.mapPlaceholder}>
             <Ionicons name="map-outline" size={60} color={COLORS.textSecondary} />
             <Text style={styles.mapText}>Mapa</Text>
@@ -57,7 +58,7 @@ export default function ActiveTripScreen({ navigation }) {
             style={styles.actionButton}
             />
         </ScrollView>
-        </View>
+        </SafeAreaView>
     );
 }
 

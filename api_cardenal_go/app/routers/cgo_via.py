@@ -38,6 +38,14 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
         raise HTTPException(status_code = 404, detail = "Vehículo o conductor asociado no encontrado")
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
     verifyResourceOwnership(payload.get("sub"), str(vehiculo.conductor.id_usuario), is_admin)
+    
+    viaje_activo = db.query(Viaje).join(Vehiculo).filter(
+        Vehiculo.id_conductor == vehiculo.id_conductor,
+        Viaje.id_estatus.in_([1, 2])
+    ).first()
+    if viaje_activo:
+        raise HTTPException(status_code = 400, detail = "Ya tienes un viaje programado. Debes finalizarlo o cancelarlo antes de crear uno nuevo.")
+
     datos_viaje = viaje_in.model_dump()
     inicio = datos_viaje["ubicacion_inicio"]
     destino = datos_viaje["ubicacion_destino"]
@@ -56,6 +64,17 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
     db.refresh(nuevo_viaje)
     return nuevo_viaje
 
+<<<<<<< Updated upstream
+@router.get("/", response_model=List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
+def obtenerViajes(
+    skip: int = 0,
+    limit: int = 100,
+    id_estatus: Optional[int] = Query(None, description="Filtrar por estatus (1=Programado, 2=En curso)"),
+    fecha: Optional[str] = Query(None, description="Filtrar por fecha YYYY-MM-DD"),
+    lat_destino: Optional[float] = Query(None, description="Latitud del destino del pasajero"),
+    lng_destino: Optional[float] = Query(None, description="Longitud del destino del pasajero"),
+    db: Session = Depends(getDB),
+=======
 @router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
 def obtenerViajes(
     skip: int = 0, 

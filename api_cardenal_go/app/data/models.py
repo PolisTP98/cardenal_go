@@ -922,7 +922,8 @@ class MensajeChat(Base):
         ), 
         nullable = False
     )
-    contenido = Column(Text, nullable = False)
+    contenido = Column(Text, nullable = True)
+    url_imagen = Column(String(255), nullable = True)
     leido = Column(Boolean, default = False, server_default = "false")
     fecha_hora_registro = Column(DateTime(timezone = True), nullable = False, server_default = text("now()"))
     # RELACIONES

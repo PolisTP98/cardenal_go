@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, Image, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
 import { getMisViajes } from '../src/api/viajesApi';
+import { getMe } from '../src/api/usuariosApi';
+import { API_BASE_URL } from '../src/api/apiClient';
 import { COLORS, SIZES } from '../components/Theme';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
@@ -27,6 +29,24 @@ export default function DriverDashboardScreen({ navigation }) {
     desvioKmTotal: 0,
     calificacionPromedio: 5.0,
   });
+  const [profilePhoto, setProfilePhoto] = useState(null);
+
+  // Cargar foto de perfil del conductor al montar y al volver a la pantalla
+  useFocusEffect(
+    useCallback(() => {
+      const cargarFoto = async () => {
+        try {
+          const me = await getMe();
+          if (me?.url_foto_perfil && me.url_foto_perfil !== 'cardenal_upq.png') {
+            setProfilePhoto(`${API_BASE_URL}/${me.url_foto_perfil}`);
+          } else {
+            setProfilePhoto(null);
+          }
+        } catch (_) {}
+      };
+      cargarFoto();
+    }, [])
+  );
 
   const fetchTrips = async () => {
     try {
@@ -118,149 +138,78 @@ export default function DriverDashboardScreen({ navigation }) {
     fetchTrips();
   };
 
-  const renderTripCard = ({ item }) => {
-    const pendingRequests = item.solicitudes?.filter(s => s.id_estatus === 1) || [];
-
-    return (
-      <TouchableOpacity
-        onPress={() => navigation.navigate('TripDetail', { viajeId: item.id })}
-        activeOpacity={0.9}
-      >
-        <Card style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.dateTime}>
-              {item.fecha} • {item.hora_inicio.substring(0, 5)}
-            </Text>
-            <StatusBadge statusId={item.id_estatus} type="viaje" />
-          </View>
-
-          <View style={styles.routeContainer}>
-            <View style={styles.routeItem}>
-              <Ionicons name="radio-button-on" size={16} color={COLORS.textSecondary} />
-              <Text style={styles.routeText} numberOfLines={1}>
-                {item.nombre_origen || 'Origen'}
-              </Text>
-            </View>
-            <View style={styles.routeLine} />
-            <View style={styles.routeItem}>
-              <Ionicons name="location" size={16} color={COLORS.primary} />
-              <Text style={styles.routeText} numberOfLines={1}>
-                {item.nombre_destino || 'Destino'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.cardFooter}>
-            <Text style={styles.seatsInfo}>
-              Lugares: <Text style={styles.boldText}>{item.asientos_disponibles}/{item.asientos_totales}</Text>
-            </Text>
-            {pendingRequests.length > 0 ? (
-              <View style={styles.requestAlert}>
-                <Text style={styles.requestAlertText}>
-                  {pendingRequests.length} Solicitud{pendingRequests.length > 1 ? 'es' : ''} pendiente{pendingRequests.length > 1 ? 's' : ''}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.priceText}>
-                ${item.precio_sugerido ? parseFloat(item.precio_sugerido).toFixed(2) : '0.00'}
-              </Text>
-            )}
-          </View>
-        </Card>
-      </TouchableOpacity>
-    );
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <TopHeader
         title="Panel Conductor"
         rightIcon={() => (
           <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.logoutBtn}>
-            <Ionicons name="person-circle-outline" size={26} color={COLORS.primary} />
+            {profilePhoto ? (
+              <Image
+                source={{ uri: profilePhoto }}
+                style={styles.headerAvatar}
+              />
+            ) : (
+              <Ionicons name="person-circle-outline" size={26} color={COLORS.primary} />
+            )}
           </TouchableOpacity>
         )}
       />
 
-      <View style={styles.welcomeContainer}>
-        <Text style={styles.welcomeText}>¡Hola, {user.nombre_completo.split(' ')[0]}!</Text>
-        <Text style={styles.subWelcome}>Gestiona tus rutas compartidas</Text>
-      </View>
-
-      <View style={styles.statsContainer}>
-        <Text style={styles.statsTitle}>Rendimiento Financiero</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statBox}>
-            <Ionicons name="cash" size={24} color={COLORS.success} />
-            <Text style={styles.statValue}>${stats.gananciasSemana.toFixed(2)}</Text>
-            <Text style={styles.statLabel}>Semana</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Ionicons name="wallet" size={24} color={COLORS.success} />
-            <Text style={styles.statValue}>${stats.gananciasMes.toFixed(2)}</Text>
-            <Text style={styles.statLabel}>Mes</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Ionicons name="podium" size={24} color={COLORS.success} />
-            <Text style={styles.statValue}>${stats.gananciasTotales.toFixed(2)}</Text>
-            <Text style={styles.statLabel}>Totales</Text>
-          </View>
+      <ScrollView 
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
+      >
+        <View style={styles.welcomeContainer}>
+          <Text style={styles.welcomeText}>¡Hola, {user.nombre_completo.split(' ')[0]}!</Text>
+          <Text style={styles.subWelcome}>Gestiona tus rutas compartidas</Text>
         </View>
 
-        <Text style={[styles.statsTitle, { marginTop: 16 }]}>Métricas Operativas</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statBox}>
-            <Ionicons name="car-sport" size={24} color={COLORS.primary} />
-            <Text style={styles.statValue}>{stats.viajesSemana} / {stats.viajesTotales}</Text>
-            <Text style={styles.statLabel}>Viajes (Sem/Tot)</Text>
+        <View style={styles.statsContainer}>
+          <Text style={styles.statsTitle}>Rendimiento Financiero</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statBox}>
+              <Ionicons name="cash" size={24} color={COLORS.success} />
+              <Text style={styles.statValue}>${stats.gananciasSemana.toFixed(2)}</Text>
+              <Text style={styles.statLabel}>Semana</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Ionicons name="wallet" size={24} color={COLORS.success} />
+              <Text style={styles.statValue}>${stats.gananciasMes.toFixed(2)}</Text>
+              <Text style={styles.statLabel}>Mes</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Ionicons name="podium" size={24} color={COLORS.success} />
+              <Text style={styles.statValue}>${stats.gananciasTotales.toFixed(2)}</Text>
+              <Text style={styles.statLabel}>Totales</Text>
+            </View>
           </View>
-          <View style={styles.statBox}>
-            <Ionicons name="people" size={24} color={COLORS.primary} />
-            <Text style={styles.statValue}>{stats.pasajerosAceptados}</Text>
-            <Text style={styles.statLabel}>Pasajeros Tot.</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Ionicons name="trending-up" size={24} color={COLORS.warning} />
-            <Text style={styles.statValue}>{stats.desvioKmTotal.toFixed(1)} km</Text>
-            <Text style={styles.statLabel}>Desvío Total</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Ionicons name="star" size={24} color="#D97706" />
-            <Text style={styles.statValue}>{stats.calificacionPromedio.toFixed(1)}</Text>
-            <Text style={styles.statLabel}>Calificación</Text>
+
+          <Text style={[styles.statsTitle, { marginTop: 16 }]}>Métricas Operativas</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statBox}>
+              <Ionicons name="car-sport" size={24} color={COLORS.primary} />
+              <Text style={styles.statValue}>{stats.viajesSemana} / {stats.viajesTotales}</Text>
+              <Text style={styles.statLabel}>Viajes (Sem/Tot)</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Ionicons name="people" size={24} color={COLORS.primary} />
+              <Text style={styles.statValue}>{stats.pasajerosAceptados}</Text>
+              <Text style={styles.statLabel}>Pasajeros Tot.</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Ionicons name="trending-up" size={24} color={COLORS.warning} />
+              <Text style={styles.statValue}>{stats.desvioKmTotal.toFixed(1)} km</Text>
+              <Text style={styles.statLabel}>Desvío Total</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Ionicons name="star" size={24} color="#D97706" />
+              <Text style={styles.statValue}>{stats.calificacionPromedio.toFixed(1)}</Text>
+              <Text style={styles.statLabel}>Calificación</Text>
+            </View>
           </View>
         </View>
-      </View>
-
-      <View style={styles.actionsBar}>
-        <Text style={styles.sectionTitle}>Mis Viajes Publicados</Text>
-        <TouchableOpacity
-          style={styles.publishBtn}
-          onPress={() => navigation.navigate('PublishTrip')}
-        >
-          <Ionicons name="add-circle" size={20} color="#FFF" />
-          <Text style={styles.publishBtnText}>Publicar</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={viajes}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderTripCard}
-        contentContainerStyle={styles.listContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
-        }
-        ListEmptyComponent={
-          !loading && (
-            <EmptyState
-              icon="car-outline"
-              title="Aún no has publicado viajes"
-              description="Comparte tu vehículo para ayudar a otros estudiantes a llegar a la UPQ."
-            />
-          )
-        }
-      />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -272,6 +221,13 @@ const styles = StyleSheet.create({
   },
   logoutBtn: {
     padding: 4,
+  },
+  headerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
   },
   welcomeContainer: {
     paddingHorizontal: SIZES.padding,

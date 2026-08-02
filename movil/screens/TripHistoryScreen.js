@@ -1,4 +1,5 @@
 import React from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { COLORS, SIZES } from '../components/Theme';
 import TopHeader from '../components/TopHeader';
@@ -6,7 +7,7 @@ import Card from '../components/Card';
 
 export default function TripHistoryScreen({ navigation }) {
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
         <TopHeader title="Historial de viajes" showBack onBackPress={() => navigation.goBack()} />
         
         <View style={styles.tabs}>
@@ -69,7 +70,7 @@ export default function TripHistoryScreen({ navigation }) {
             <Text style={styles.footerText}>No hay más viajes recientes.</Text>
 
         </ScrollView>
-        </View>
+        </SafeAreaView>
     );
 }
 
