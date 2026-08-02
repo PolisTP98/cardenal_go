@@ -64,17 +64,6 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
     db.refresh(nuevo_viaje)
     return nuevo_viaje
 
-<<<<<<< Updated upstream
-@router.get("/", response_model=List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
-def obtenerViajes(
-    skip: int = 0,
-    limit: int = 100,
-    id_estatus: Optional[int] = Query(None, description="Filtrar por estatus (1=Programado, 2=En curso)"),
-    fecha: Optional[str] = Query(None, description="Filtrar por fecha YYYY-MM-DD"),
-    lat_destino: Optional[float] = Query(None, description="Latitud del destino del pasajero"),
-    lng_destino: Optional[float] = Query(None, description="Longitud del destino del pasajero"),
-    db: Session = Depends(getDB),
-=======
 @router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
 def obtenerViajes(
     skip: int = 0, 
