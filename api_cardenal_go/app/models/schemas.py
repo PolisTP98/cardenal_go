@@ -93,8 +93,9 @@ class RolUpdate(BaseModel):
     descripcion: Optional[str] = Field(None, max_length = 255)
     model_config = ConfigDict(extra = "forbid")
 
-class RolResponse(RolCreate):
+class RolResponse(BaseModel):
     id: int
+    nombre: str
     model_config = ConfigDict(from_attributes = True)
 
 # MÉTODOS DE PAGO DE LOS VIAJES
@@ -294,6 +295,33 @@ class RolUsuarioResponse(BaseModel):
     estatus: Optional[EstatusUsuarioResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
+class SolicitudConductorCreate(BaseModel):
+    id_usuario: int
+    telefono: str = Field(..., max_length = 20, pattern = r"^\+?[0-9\s\-]{10,20}$")
+    licencia_conducir: str = Field(..., max_length = 50)
+    url_foto_ine: str = Field(..., max_length = 255)
+    clabe_interbancaria: Optional[str] = Field(None, pattern = r"^[0-9]{18}$")
+    nombre_banco: Optional[str] = Field(None, max_length = 50)
+    nombre_titular_cuenta: Optional[str] = Field(None, max_length = 255)
+
+class SolicitudConductorResponse(BaseModel):
+    id: int
+    id_usuario: int
+    telefono: str
+    licencia_conducir: str
+    url_foto_ine: str
+    clabe_interbancaria: Optional[str]
+    nombre_banco: Optional[str]
+    nombre_titular_cuenta: Optional[str]
+    estatus: str
+    fecha_hora_registro: datetime
+    model_config = ConfigDict(from_attributes = True)
+
+class ProcesarSolicitudSchema(BaseModel):
+    accion: str = Field(..., pattern = r"^(aceptar|rechazar)$")
+    motivo: Optional[str] = ""
+    model_config = ConfigDict(extra = "forbid")
+
 # INFORMACIÓN DEL USUARIO (SI DECIDE SER CONDUCTOR)
 class ConductorCreate(BaseModel):
     id_usuario: int
@@ -319,11 +347,9 @@ class ConductorResponse(BaseModel):
     telefono: str
     licencia_conducir: str
     url_foto_ine: str
-    ine_valida: bool
     clabe_interbancaria: Optional[str]
     nombre_banco: Optional[str]
     nombre_titular_cuenta: Optional[str]
-    id_cuenta_pasarela: Optional[str]
     fecha_hora_registro: datetime
     usuario: Optional[UsuarioResponse] = None
     model_config = ConfigDict(from_attributes = True)
@@ -708,9 +734,11 @@ class SancionCreate(BaseModel):
     id_usuario: int
     id_administrador: int
     id_estatus_usuario: int
-    fecha_inicio: Optional[date] = Field(default_factory = date.today)
+    fecha_inicio: Optional[date] = Field(default_factory=date.today)
     fecha_fin: Optional[date] = None
     notas_administrador: Optional[str] = None
+    nueva_calificacion_pasajero: Optional[Decimal] = Field(None, ge = Decimal("1.00"), le = Decimal("5.00"), decimal_places = 2)
+    nueva_calificacion_conductor: Optional[Decimal] = Field(None, ge = Decimal("1.00"), le = Decimal("5.00"), decimal_places = 2)
 
 class SancionUpdate(BaseModel):
     fecha_fin: Optional[date] = None

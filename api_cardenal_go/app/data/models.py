@@ -379,6 +379,35 @@ class RolUsuario(Base):
         back_populates = "roles_usuarios"
     )
 
+class SolicitudConductor(Base):
+    __tablename__ = "solicitudes_conductores"
+    __table_args__ = (
+        CheckConstraint(
+            "clabe_interbancaria ~ '^[0-9]{18}$'", 
+            name = "ck_solicitud_conductor_clabe"
+        ), 
+        {"schema": "cgo_usu"}
+    )
+
+    id = Column(Integer, Identity(always = True), primary_key = True)
+    id_usuario = Column(
+        Integer, 
+        ForeignKey(
+            "cgo_usu.usuarios.id", 
+            name = "fk_solicitud_conductor_usuario", 
+            onupdate = "CASCADE"
+        ), 
+        nullable = False
+    )
+    telefono = Column(String(20), nullable = False)
+    licencia_conducir = Column(String(50), nullable = False)
+    url_foto_ine = Column(String(255), nullable = False)
+    clabe_interbancaria = Column(String(18))
+    nombre_banco = Column(String(50))
+    nombre_titular_cuenta = Column(String(255))
+    estatus = Column(String(20), default = "Pendiente", server_default = "Pendiente")
+    fecha_hora_registro = Column(DateTime(timezone = True), nullable = False, server_default = text("now()"))
+
 # ALMACENAR LA INFORMACIÓN DEL USUARIO (SI DECIDE SER CONDUCTOR)
 class Conductor(Base):
     __tablename__ = "conductores"

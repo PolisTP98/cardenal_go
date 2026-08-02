@@ -197,15 +197,26 @@ create table cgo_usu.roles_usuarios(
 -- ALMACENAR LA INFORMACIÓN DEL USUARIO (SI DECIDE SER CONDUCTOR)
 create table cgo_usu.conductores(
     id int generated always as identity primary key,
-    id_usuario int unique not null references cgo_usu.usuarios(id) on update cascade,
+    id_usuario int not null unique references cgo_usu.usuarios(id) on update cascade,
     telefono varchar(20) not null,
-    licencia_conducir varchar(50) unique not null,
+    licencia_conducir varchar(50) not null,
     url_foto_ine varchar(255) not null,
-    ine_valida boolean default false,
-    clabe_interbancaria varchar(18) check(clabe_interbancaria ~ '^[0-9]{18}$'),
+    clabe_interbancaria varchar(18),
     nombre_banco varchar(50),
     nombre_titular_cuenta varchar(255),
-    id_cuenta_pasarela varchar(255),
+    fecha_hora_registro timestamptz(3) not null default now()
+);
+
+create table cgo_usu.solicitudes_conductores(
+    id int generated always as identity primary key,
+    id_usuario int not null references cgo_usu.usuarios(id) on update cascade,
+    telefono varchar(20) not null,
+    licencia_conducir varchar(50) not null,
+    url_foto_ine varchar(255) not null,
+    clabe_interbancaria varchar(18),
+    nombre_banco varchar(50),
+    nombre_titular_cuenta varchar(255),
+    estatus varchar(20) default 'Pendiente',
     fecha_hora_registro timestamptz(3) not null default now()
 );
 
