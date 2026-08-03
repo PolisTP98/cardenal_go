@@ -193,7 +193,7 @@ services:
   # ------------------------------------------------------------------
   # | (6) FRONTEND PARA SUPERADMINISTRADORES/ADMINISTRADORES (Flask) |
   # ------------------------------------------------------------------
-  web:
+  frontend:
     build:
       context: ./web
       dockerfile: Dockerfile

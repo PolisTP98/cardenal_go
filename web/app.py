@@ -4,7 +4,6 @@ import os
 import json
 from functools import wraps
 from dotenv import load_dotenv
-from decimal import Decimal, ROUND_DOWN
 
 load_dotenv(dotenv_path = "../.env")
 
@@ -45,10 +44,10 @@ def login():
             if res.status_code == 200:
                 data = res.json()
                 if data.get("role") in ["Superadministrador", "Administrador"]:
-                    session["token"] = data["access_token"]
-                    session["role"] = data["role"]
-                    session["nombre"] = data["nombre_completo"]
-                    session["usuario_id"] = data.get("id")
+                    session["token"] = data.get("access_token")
+                    session["role"] = data.get("role")
+                    session["nombre"] = data.get("nombre_completo")
+                    session["usuario_id"] = data.get("usuario_id") or data.get("id_usuario")
                     return redirect(url_for("dashboard_usuarios"))
                 else:
                     flash("Acceso denegado, rol no autorizado", "danger")
@@ -64,19 +63,12 @@ def logout():
     return redirect(url_for("login"))
 
 def normalizar_rol(u):
-    val = u.get("rol") or u.get("role") or u.get("rol_nombre") or u.get("tipo")
-    if isinstance(val, dict):
-        val = val.get("nombre") or val.get("rol") or ""
-    val = str(val or "").strip().lower().replace("_", "").replace(" ", "")
-    if "super" in val:
-        return "Superadministrador"
-    elif "admin" in val:
-        return "Administrador"
-    elif "conduc" in val:
-        return "Conductor"
-    elif "pasaj" in val:
-        return "Pasajero"
-    return "Pasajero"
+    if isinstance(u, dict):
+        rol = u.get("rol") or u.get("role")
+        if isinstance(rol, dict):
+            return rol.get("nombre", "Sin rol")
+        return str(rol) if rol else "Sin rol"
+    return "Sin rol"
 
 def obtener_fecha_registro(u):
     f = u.get("fecha_hora_registro") or u.get("fecha_registro") or u.get("created_at") or u.get("fecha") or ""
@@ -98,7 +90,19 @@ def dashboard_usuarios():
     c_sadm = 0 # Incluido en admins por simplicidad en este conteo
     
     conteo = {"Pasajero": c_pas, "Conductor": c_con, "Administrador": c_adm, "Superadministrador": c_sadm}
-    # Para el gráfico, enviaremos un json vacío ya que no estamos jalando todos los registros
+    regs = []
+    for u in data:
+        fecha = obtener_fecha_registro(u)
+        rol_norm = normalizar_rol(u)
+        if fecha:
+            regs.append({
+                "fecha": fecha, 
+                "fecha_registro": fecha, 
+                "fecha_hora_registro": fecha,
+                "categoria": rol_norm, 
+                "rol": rol_norm
+            })
+            
     return render_template(
         "dashboard_usuarios.html", 
         total_usuarios = total, 
@@ -173,49 +177,71 @@ def usuarios():
         usuarios_data = res.json() if res.status_code == 200 else []
     except:
         usuarios_data = []
-    return render_template("usuarios.html", usuarios = usuarios_data, rol = session.get("role"), active_page="usuarios")
+    return render_template("usuarios.html", usuarios = usuarios_data, rol = session.get("role"), active_page = "usuarios")
 
 @app.route("/usuarios/crear", methods = ["POST"])
 @requiere_auth(["Superadministrador", "Administrador"])
 def crear_usuario():
-    data = {
-        "matricula": request.form.get("matricula"),
-        "nombre_completo": request.form.get("nombre_completo"),
-        "correo": request.form.get("correo"),
-        "password": request.form.get("password"),
-        "rol": request.form.get("rol")
+    payload_backend = {
+        "matricula": request.form.get("matricula"), 
+        "nombre_completo": request.form.get("nombre_completo"), 
+        "correo_institucional": request.form.get("correo"), 
+        "contrasena_raw": request.form.get("password")
     }
-    requests.post(f"{API_URL}/api/usu/", json = data, headers = get_headers())
+    id_rol = request.form.get("id_rol")
+    resp = requests.post(f"{API_URL}/api/usu/", json = payload_backend, headers = get_headers())
+    if resp.status_code in [200, 201]:
+        user_data = resp.json()
+        new_user_id = user_data.get("id")
+        if id_rol and new_user_id:
+            requests.put(
+                f"{API_URL}/api/usu/usuarios/{new_user_id}/estatus", 
+                json = {"id_rol": int(id_rol)}, 
+                headers = get_headers()
+            )
+        flash("Usuario creado exitosamente", "success")
+    else:
+        detalle = resp.json().get("detail", "Error al crear usuario") if resp.headers.get("content-type") == "application/json" else "Error al crear usuario"
+        flash(f"Error: {detalle}", "danger")
     return redirect(url_for("usuarios"))
 
 @app.route("/usuarios/editar/<int:id>", methods = ["POST"])
 @requiere_auth(["Superadministrador", "Administrador"])
 def editar_usuario(id):
-    data = {
-        "matricula": request.form.get("matricula"),
-        "nombre_completo": request.form.get("nombre_completo"),
-        "correo": request.form.get("correo"),
-        "rol": request.form.get("rol")
+    payload_backend = {
+        "matricula": request.form.get("matricula"), 
+        "nombre_completo": request.form.get("nombre_completo"), 
+        "correo_institucional": request.form.get("correo")
     }
-    password = request.form.get("password")
-    if password:
-        data["password"] = password
-    calificacion_raw = request.form.get("calificacion")
-    if calificacion_raw is not None and calificacion_raw != "":
-        try:
-            d = Decimal(calificacion_raw).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
-            d = max(Decimal('0.00'), min(Decimal('5.00'), d))
-            data["calificacion"] = float(d)
-        except Exception:
-            pass
-    requests.put(f"{API_URL}/api/usu/{id}", json = data, headers = get_headers())
+    nueva_pass = request.form.get("password")
+    if nueva_pass and nueva_pass.strip():
+        payload_backend["contrasena_raw"] = nueva_pass.strip()
+    id_rol = request.form.get("id_rol")
+    resp = requests.put(f"{API_URL}/api/usu/{id}", json = payload_backend, headers = get_headers())
+    if resp.status_code == 200:
+        if id_rol:
+            requests.put(
+                f"{API_URL}/api/usu/usuarios/{id}/estatus", 
+                json = {"id_rol": int(id_rol)}, 
+                headers = get_headers()
+            )
+        flash("Usuario actualizado exitosamente", "success")
+    else:
+        flash("Error al actualizar usuario", "danger")
     return redirect(url_for("usuarios"))
 
 @app.route("/usuarios/eliminar/<int:id>", methods = ["POST"])
 @requiere_auth(["Superadministrador", "Administrador"])
 def eliminar_usuario(id):
-    if session.get("role") != "Administrador":
-        requests.delete(f"{API_URL}/api/usu/{id}", headers = get_headers())
+    respuesta = requests.patch(f"{API_URL}/api/usu/usuarios/{id}/eliminacion-logica", headers = get_headers())
+    if respuesta.status_code in [200, 204]:
+        flash("Usuario eliminado exitosamente", "info")
+    else:
+        try:
+            error_det = respuesta.json().get("detail", "Error desconocido en el servidor")
+        except Exception:
+            error_det = "No se pudo conectar correctamente con el servicio"
+        flash(f"No fue posible eliminar el usuario: {error_det}", "danger")
     return redirect(url_for("usuarios"))
 
 @app.route("/reportes")
@@ -269,29 +295,57 @@ def editar_reporte(id):
         "motivo_personalizado": request.form.get("motivo_personalizado"),
         "id_viaje": request.form.get("id_viaje")
     }
-    requests.put(f"{API_URL}/api/adm/reportes/{id}", json = data, headers = get_headers())
+    requests.patch(f"{API_URL}/api/adm/reportes/{id}", json = data, headers = get_headers())
     return redirect(url_for("reportes"))
 
 @app.route("/reportes/eliminar/<int:id>", methods = ["POST"])
 @requiere_auth(["Superadministrador", "Administrador"])
 def eliminar_reporte(id):
-    if session.get("role") != "Administrador":
+    if session.get("role") == "Superadministrador":
         requests.delete(f"{API_URL}/api/adm/reportes/{id}", headers = get_headers())
     return redirect(url_for("reportes"))
 
 @app.route("/sanciones/crear", methods = ["POST"])
 @requiere_auth(["Superadministrador", "Administrador"])
 def crear_sancion():
-    data = {
-        "id_usuario": request.form.get("id_usuario"),
-        "id_administrador": request.form.get("id_administrador"),
-        "id_estatus_usuario": request.form.get("id_estatus_usuario"),
-        "nueva_calificacion_pasajero": request.form.get("nueva_calificacion_pasajero"),
-        "nueva_calificacion_conductor": request.form.get("nueva_calificacion_conductor"),
-        "fecha_fin": request.form.get("fecha_fin") or None,
-        "notas_administrador": request.form.get("notas_administrador")
+    id_reporte = request.form.get("id_reporte")
+    payload_sancion = {
+        "id_usuario": int(request.form.get("id_usuario")),
+        "id_administrador": int(request.form.get("id_administrador")),
+        "id_estatus_usuario": int(request.form.get("id_estatus_usuario")),
+        "fecha_fin": request.form.get("fecha_fin") if request.form.get("fecha_fin") else None,
+        "notas_administrador": request.form.get("notas_administrador") or None,
+        "nueva_calificacion_pasajero": float(request.form.get("nueva_calificacion_pasajero")) if request.form.get("nueva_calificacion_pasajero") else None,
+        "nueva_calificacion_conductor": float(request.form.get("nueva_calificacion_conductor")) if request.form.get("nueva_calificacion_conductor") else None
     }
-    requests.post(f"{API_URL}/api/adm/sanciones", json = data, headers = get_headers())
+    res_sancion = requests.post(
+        f"{API_URL}/api/adm/sanciones", 
+        json = payload_sancion, 
+        headers = get_headers()
+    )
+    if res_sancion.status_code in [200, 201]:
+        if id_reporte:
+            ID_ESTADO_ATENDIDO = 3
+            payload_reporte = {
+                "id_estado_reporte": ID_ESTADO_ATENDIDO
+            }
+            res_reporte = requests.patch(
+                f"{API_URL}/api/adm/reportes/{id_reporte}", 
+                json = payload_reporte, 
+                headers = get_headers()
+            )
+            if res_reporte.status_code == 200:
+                flash("Sanción aplicada y reporte cerrado con éxito.", "success")
+            else:
+                flash("Sanción aplicada correctamente, pero ocurrió un problema al cambiar el estado del reporte.", "warning")
+        else:
+            flash("Sanción aplicada exitosamente.", "success")
+    else:
+        try:
+            error_det = res_sancion.json().get("detail", "Error al procesar la sanción.")
+        except Exception:
+            error_det = "Error de comunicación con el backend."
+        flash(f"No se pudo registrar la sanción: {error_det}", "danger")
     return redirect(url_for("reportes"))
 
 @app.route("/viajes")
@@ -340,6 +394,26 @@ def exportar(modulo, formato):
             )
     flash("Error al generar el reporte", "danger")
     return redirect(url_for("dashboard_usuarios"))
+
+@app.route("/api_local/reportes_dinamicos/<modulo>/<formato>", methods = ["POST"])
+@requiere_auth(["Superadministrador", "Administrador"])
+def proxy_reportes_dinamicos(modulo, formato):
+    data = request.get_json()
+    urls_backend = {
+        "usu": f"{API_URL}/api/usu/reportes/{formato}",
+        "adm": f"{API_URL}/api/adm/reportes/{formato}",
+        "via": f"{API_URL}/api/via/reportes/{formato}"
+    }
+    url_destino = urls_backend.get(modulo)
+    
+    if url_destino:
+        res = requests.post(url_destino, json = data, headers = get_headers())
+        if res.status_code == 200:
+            return Response(
+                res.content, 
+                content_type = res.headers.get("Content-Type")
+            )
+    return jsonify({"error": "No fue posible generar el reporte"}), 400
 
 @app.route("/api_local/notificaciones", methods = ["GET"])
 @requiere_auth(["Superadministrador", "Administrador"])

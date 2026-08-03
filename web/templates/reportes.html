@@ -2,9 +2,16 @@
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Gestión de incidencias (reportes)</h1>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalCrearReporte">
-        <i class="bi bi-plus-lg me-1"></i>Nuevo reporte
-    </button>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-3">
+            <button class="btn btn-primary" onclick="descargarReporteDinamico('word', 'adm', 'fila-reporte')">Word</button>
+            <button class="btn btn-danger" onclick="descargarReporteDinamico('pdf', 'adm', 'fila-reporte')">PDF</button>
+            <button class="btn btn-success" onclick="descargarReporteDinamico('excel', 'adm', 'fila-reporte')">Excel</button>
+        </div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalCrearReporte">
+            <i class="bi bi-plus-lg me-1"></i>Nuevo reporte
+        </button>
+    </div>
 </div>
 
 <div class="row g-3 mb-4 bg-light p-3 rounded border">
@@ -57,7 +64,7 @@
             {% for r in reportes %}
             <tr class="fila-reporte cursor-pointer" 
                 data-id="{{ r.id }}"
-                data-fecha="{{ (r.fecha_hora_registro|string)[:10] }}"
+                data-fecha="{{ (r.fecha_hora_creacion|string)[:10] }}"
                 data-reportador-nombre="{{ r.reportador.nombre_completo | lower }}"
                 data-reportador-matricula="{{ r.reportador.matricula | lower }}"
                 data-reportado-nombre="{{ r.reportado.nombre_completo | lower }}"
@@ -67,7 +74,7 @@
                 <td><span class="badge bg-info text-dark">{{ r.reportador.matricula }}</span> <br> <small>{{ r.reportador.nombre_completo }}</small></td>
                 <td><span class="badge bg-warning text-dark">{{ r.reportado.matricula }}</span> <br> <small>{{ r.reportado.nombre_completo }}</small></td>
                 <td>{{ r.motivo_reporte.nombre if r.motivo_reporte else 'Sin clasificar' }}</td>
-                <td>{{ (r.fecha_hora_registro|string)[:16] }}</td>
+                <td>{{ (r.fecha_hora_creacion|string)[:16] }}</td>
                 <td class="text-center">
                     {% if rol == 'Superadministrador' %}
                     <button class="btn btn-sm btn-warning me-1 action-btn" data-bs-toggle="modal" data-bs-target="#modalEditarReporte{{ r.id }}">
@@ -132,9 +139,10 @@
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
                             <div class="modal-body">
+                                <input type="hidden" name="id_reporte" value="{{ r.id }}">
                                 <input type="hidden" name="id_usuario" value="{{ r.reportado.id }}">
                                 <input type="hidden" name="id_administrador" value="{{ current_user_id }}">
-                                
+
                                 <div class="mb-3">
                                     <label class="form-label fw-bold">Estatus de sanción aplicado</label>
                                     <select name="id_estatus_usuario" class="form-select" required>
@@ -143,15 +151,15 @@
                                         {% endfor %}
                                     </select>
                                 </div>
-                                
+
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label fw-bold">Modificar calificación (pasajero)</label>
-                                        <input type="number" step="0.01" min="1" max="5" name="nueva_calificacion_pasajero" class="form-control" value="{{ r.reportado.calificacion_pasajero }}">
+                                        <input type="number" step="0.01" min="1.00" max="5.00" name="nueva_calificacion_pasajero" class="form-control" value="{{ r.reportado.calificacion_pasajero or '' }}">
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label fw-bold">Modificar calificación (conductor)</label>
-                                        <input type="number" step="0.01" min="1" max="5" name="nueva_calificacion_conductor" class="form-control" value="{{ r.reportado.calificacion_conductor }}">
+                                        <input type="number" step="0.01" min="1.00" max="5.00" name="nueva_calificacion_conductor" class="form-control" value="{{ r.reportado.calificacion_conductor or '' }}">
                                     </div>
                                 </div>
                                 
@@ -162,11 +170,11 @@
 
                                 <div class="mb-3">
                                     <label class="form-label fw-bold">Notas del administrador</label>
-                                    <textarea name="notas_administrador" class="form-control" rows="3" required></textarea>
+                                    <textarea name="notas_administrador" class="form-control" rows="3" placeholder="Ingresa detalles u observaciones de la sanción..."></textarea>
                                 </div>
-                            </div>
+
                             <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#modalDetalleReporte{{ r.id }}">Volver al reporte</button>
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                                 <button type="submit" class="btn btn-danger">Aplicar sanción</button>
                             </div>
                         </form>

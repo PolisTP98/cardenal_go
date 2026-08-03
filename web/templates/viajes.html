@@ -1,7 +1,12 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+< class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Reportes de viajes</h1>
+    <div class="btn-group me-3">
+        <button class="btn btn-primary" onclick="descargarReporteDinamico('word', 'via', 'fila-viaje')">Word</button>
+        <button class="btn btn-danger" onclick="descargarReporteDinamico('pdf', 'via', 'fila-viaje')">PDF</button>
+        <button class="btn btn-success" onclick="descargarReporteDinamico('excel', 'via', 'fila-viaje')">Excel</button>
+    </div>
 </div>
 
 <div class="row g-3 mb-4 bg-light p-3 rounded border">
