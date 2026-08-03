@@ -365,7 +365,7 @@ create table cgo_soc.mensajes_chats(
     id_chat int not null references cgo_soc.chats(id),
     id_emisor int not null references cgo_usu.usuarios(id) on update cascade,
     id_receptor int not null references cgo_usu.usuarios(id) on update cascade,
-    contenido text not null,
+    contenido text,
     url_imagen varchar(255),
     leido boolean default false,
     fecha_hora_registro timestamptz(3) not null default now()

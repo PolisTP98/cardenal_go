@@ -193,6 +193,12 @@
                 });
         }
 
+        function getImageUrl(path) {
+            if (!path) return '';
+            if (path.startsWith('http')) return path;
+            return '{{ API_URL }}/' + path;
+        }
+
         function abrirDetalleSolicitud(datos, idNotificacion) {
             document.getElementById('detSolicitudId').value = idNotificacion;
             document.getElementById('detUsuId').textContent = datos.id_usuario;
@@ -201,7 +207,7 @@
             document.getElementById('detClabe').textContent = datos.clabe_interbancaria || 'N/A';
             document.getElementById('detBanco').textContent = datos.nombre_banco || 'N/A';
             document.getElementById('detTitular').textContent = datos.nombre_titular_cuenta || 'N/A';
-            document.getElementById('detFotoIne').src = datos.url_foto_ine;
+            document.getElementById('detFotoIne').src = getImageUrl(datos.url_foto_ine);
             
             // Nuevos datos del vehiculo
             document.getElementById('detPlaca').textContent = datos.placa || 'N/A';
@@ -223,7 +229,7 @@
                 divFotosVehiculo.style.display = 'block';
                 datos.fotos_vehiculo.forEach(url => {
                     const img = document.createElement('img');
-                    img.src = url;
+                    img.src = getImageUrl(url);
                     img.className = 'img-fluid rounded border';
                     img.style.maxHeight = '150px';
                     contenedorFotos.appendChild(img);

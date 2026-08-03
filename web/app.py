@@ -12,6 +12,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FRONTEND_SECRET_KEY", "cardenalgo_default_secret")
 API_URL = os.environ.get("API_URL", "http://backend:8000")
 
+@app.context_processor
+def inject_api_url():
+    return dict(API_URL=API_URL)
+
 def requiere_auth(roles_permitidos):
     def decorator(f):
         @wraps(f)
@@ -293,12 +297,29 @@ def crear_sancion():
 @app.route("/viajes")
 @requiere_auth(["Superadministrador", "Administrador"])
 def viajes():
+    registros = []
     try:
-        res = requests.get(f"{API_URL}/api/via/", headers = get_headers())
-        viajes_data = res.json() if res.status_code == 200 else []
-    except:
-        viajes_data = []
-    return render_template("viajes.html", registros = viajes_data, active_page="viajes")
+        # Obtener viajes (retorna ViajeResponse)
+        res_via = requests.get(f"{API_URL}/api/via/", headers = get_headers())
+        viajes_raw = res_via.json() if res_via.status_code == 200 else []
+        
+        # Obtener solicitudes (retorna SolicitudViajeResponse)
+        res_sol = requests.get(f"{API_URL}/api/via/solicitudes/", headers = get_headers())
+        solicitudes_raw = res_sol.json() if res_sol.status_code == 200 else []
+        
+        # Concatenar las respuestas directamente, cada una cuenta con su tipo_registro desde la API
+        if isinstance(viajes_raw, list):
+            registros.extend(viajes_raw)
+        if isinstance(solicitudes_raw, list):
+            registros.extend(solicitudes_raw)
+            
+        # Ordenar por fecha_hora_registro descendente
+        registros.sort(key=lambda x: x.get("fecha_hora_registro") or "", reverse=True)
+        
+    except Exception as e:
+        registros = []
+        
+    return render_template("viajes.html", registros = registros, active_page="viajes")
 
 @app.route("/exportar/<modulo>/<formato>")
 @requiere_auth(["Superadministrador", "Administrador"])

@@ -325,8 +325,8 @@ class SolicitudConductorResponse(BaseModel):
     model_config = ConfigDict(from_attributes = True)
 
 class ProcesarSolicitudSchema(BaseModel):
-    accion: str = Field(..., pattern = r"^(aceptar|rechazar)$")
-    motivo: Optional[str] = ""
+    accion: str = Field(..., pattern = r"^(Aprobar|Rechazar)$")
+    motivo_rechazo: Optional[str] = ""
     model_config = ConfigDict(extra = "forbid")
 
 # INFORMACIÓN DEL USUARIO (SI DECIDE SER CONDUCTOR)
@@ -461,6 +461,7 @@ class ViajeUpdate(BaseModel):
     model_config = ConfigDict(extra = "forbid")
 
 class ViajeResponse(BaseModel):
+    tipo_registro: Literal["viaje"] = "viaje"
     id: int
     id_vehiculo: int
     id_estatus: int
@@ -504,6 +505,7 @@ class SolicitudViajeUpdate(BaseModel):
     model_config = ConfigDict(extra = "forbid")
 
 class SolicitudViajeResponse(BaseModel):
+    tipo_registro: Literal["solicitud"] = "solicitud"
     id: int
     id_viaje: int
     id_pasajero: int

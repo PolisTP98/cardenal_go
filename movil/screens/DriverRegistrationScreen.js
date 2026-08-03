@@ -13,34 +13,39 @@ import { useAuth } from '../src/context/AuthContext';
 import { solicitarSerConductor } from '../src/api/usuariosApi';
 import VehicleColorPicker from '../components/VehicleColorPicker';
 
-export default function DriverRegistrationScreen({ navigation }) {
+export default function DriverRegistrationScreen({ navigation, route }) {
   const { user, updateRole } = useAuth();
+  const prefill = route?.params?.prefill || {};
+
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
   // Form State
-  const [phone, setPhone] = useState('');
-  const [license, setLicense] = useState('');
+  const [phone, setPhone] = useState(prefill.telefono || '');
+  const [license, setLicense] = useState(prefill.licencia_conducir || '');
   const [facePhoto, setFacePhoto] = useState(null);
+  const [inePhoto, setInePhoto] = useState(null);
   
-  const [plate, setPlate] = useState('');
-  const [color, setColor] = useState('');
-  const [model, setModel] = useState('');
-  const [year, setYear] = useState('');
+  const [plate, setPlate] = useState(prefill.placa || '');
+  const [color, setColor] = useState(prefill.color || '');
+  const [model, setModel] = useState(prefill.modelo || '');
+  const [year, setYear] = useState(prefill.anio ? String(prefill.anio) : '');
   const [vehiclePhotos, setVehiclePhotos] = useState([]);
 
-  const pickImage = async (isVehicle = false) => {
+  const pickImage = async (type = 'face') => { // 'face', 'ine', or 'vehicle'
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: !isVehicle,
-      aspect: isVehicle ? [4, 3] : [1, 1],
+      allowsEditing: type !== 'vehicle',
+      aspect: type === 'vehicle' ? [4, 3] : (type === 'ine' ? [16, 9] : [1, 1]),
       quality: 0.7,
-      allowsMultipleSelection: isVehicle,
+      allowsMultipleSelection: type === 'vehicle',
     });
 
     if (!result.canceled) {
-      if (isVehicle) {
+      if (type === 'vehicle') {
         setVehiclePhotos([...vehiclePhotos, ...result.assets]);
+      } else if (type === 'ine') {
+        setInePhoto(result.assets[0]);
       } else {
         setFacePhoto(result.assets[0]);
       }
@@ -49,8 +54,8 @@ export default function DriverRegistrationScreen({ navigation }) {
 
   const nextStep = () => {
     if (step === 1) {
-      if (!phone || !license || !facePhoto) {
-        Alert.alert('Campos faltantes', 'Por favor ingresa tu teléfono, licencia y una fotografía reciente de tu rostro.');
+      if (!phone || !license || !facePhoto || !inePhoto) {
+        Alert.alert('Campos faltantes', 'Por favor ingresa tu teléfono, licencia y las fotografías (rostro e INE).');
         return;
       }
       if (phone.length < 10) {
@@ -73,6 +78,15 @@ export default function DriverRegistrationScreen({ navigation }) {
       return;
     }
 
+    // Normalizar y validar placa (Querétaro)
+    const normalizedPlate = plate.toUpperCase().replace(/[\s-]/g, '');
+    const queretaroPlateRegex = /^(U[KLMNP][A-Z](\d{3}[A-Z]|\d{4}|\d{3})|S[STUVWXY]\d{4}[A-Z])$/;
+    
+    if (!queretaroPlateRegex.test(normalizedPlate)) {
+      Alert.alert('Placa inválida', 'La placa ingresada no corresponde a un formato válido del Estado de Querétaro.');
+      return;
+    }
+
     setLoading(true);
     try {
       // 1. Enviar Solicitud Única (Conductor + Vehículo)
@@ -85,8 +99,13 @@ export default function DriverRegistrationScreen({ navigation }) {
         name: facePhoto.fileName || `foto_perfil_${user.id}.jpg`,
         type: 'image/jpeg',
       });
+      solicitudFormData.append('foto_ine', {
+        uri: inePhoto.uri,
+        name: inePhoto.fileName || `foto_ine_${user.id}.jpg`,
+        type: 'image/jpeg',
+      });
       
-      solicitudFormData.append('placa', plate.toUpperCase());
+      solicitudFormData.append('placa', normalizedPlate);
       solicitudFormData.append('color', color);
       solicitudFormData.append('modelo', model);
       solicitudFormData.append('anio', numericYear);
@@ -172,7 +191,7 @@ export default function DriverRegistrationScreen({ navigation }) {
                 onChangeText={setLicense}
               />
               <Text style={styles.label}>Fotografía de Rostro</Text>
-              <TouchableOpacity style={styles.imagePickerBtn} onPress={() => pickImage(false)}>
+              <TouchableOpacity style={styles.imagePickerBtn} onPress={() => pickImage('face')}>
                 <Ionicons name="camera" size={24} color={COLORS.primary} />
                 <Text style={styles.imagePickerText}>
                   {facePhoto ? 'Cambiar fotografía' : 'Seleccionar fotografía'}
@@ -181,6 +200,18 @@ export default function DriverRegistrationScreen({ navigation }) {
               {facePhoto && (
                 <Image source={{ uri: facePhoto.uri }} style={styles.previewImage} />
               )}
+              
+              <Text style={styles.label}>Fotografía de INE (Frente)</Text>
+              <TouchableOpacity style={styles.imagePickerBtn} onPress={() => pickImage('ine')}>
+                <Ionicons name="card" size={24} color={COLORS.primary} />
+                <Text style={styles.imagePickerText}>
+                  {inePhoto ? 'Cambiar fotografía de INE' : 'Seleccionar fotografía de INE'}
+                </Text>
+              </TouchableOpacity>
+              {inePhoto && (
+                <Image source={{ uri: inePhoto.uri }} style={styles.previewImage} />
+              )}
+              
               <PrimaryButton title="Continuar" onPress={nextStep} style={styles.btn} />
             </Card>
           ) : (
@@ -216,7 +247,7 @@ export default function DriverRegistrationScreen({ navigation }) {
                 </View>
               </View>
               <Text style={styles.label}>Fotografías del Vehículo</Text>
-              <TouchableOpacity style={styles.imagePickerBtn} onPress={() => pickImage(true)}>
+              <TouchableOpacity style={styles.imagePickerBtn} onPress={() => pickImage('vehicle')}>
                 <Ionicons name="images" size={24} color={COLORS.primary} />
                 <Text style={styles.imagePickerText}>Seleccionar fotografías</Text>
               </TouchableOpacity>

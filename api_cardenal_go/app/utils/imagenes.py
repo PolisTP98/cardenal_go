@@ -21,8 +21,8 @@ from fastapi import UploadFile, HTTPException, status
 # | RUTAS BASE DE LA ESTRUCTURA DE CARPETAS |
 # -----------------------------------------
 
-# Resolución dinámica: la carpeta Imagenes/ siempre queda junto al main.py del backend
-_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Resolución dinámica: la carpeta Imagenes/ siempre queda en la raíz del backend (/app en Docker)
+_APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE_IMAGENES = os.path.join(_APP_DIR, "Imagenes")
 
 RUTA_PASAJEROS   = os.path.join(BASE_IMAGENES, "usuarios", "pasajeros")

@@ -21,6 +21,7 @@ from security.auth import (
     verifyResourceOwnership
 )
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF
+from utils.validaciones import validar_placa_queretaro
 from utils.imagenes import guardarImagen, eliminarImagen, RUTA_CONDUCTORES, RUTA_VEHICULOS, RUTA_PASAJEROS
 
 
@@ -122,7 +123,6 @@ def obtenerUsuarios(skip: int = 0, limit: int = 100, db: Session = Depends(getDB
 
 
 @router.get("/buscar", response_model = List[schemas.UsuarioResponse], summary = "Buscar usuario(s) con filtros dinámicos")
-@router.get("/buscar", response_model = List[schemas.UsuarioResponse])
 def buscarUsuarios(
     busqueda: Optional[str] = Query(None), 
     rol: Optional[str] = Query(None), 
@@ -142,8 +142,15 @@ def buscarUsuarios(
         )
     if rol:
         query = query.filter(Rol.nombre == rol)
-    if current_role == "Administrador":
-        query = query.filter((Rol.nombre != "Superadministrador") | (RolUsuario.id_rol.is_(None)))
+    
+    # Excluir siempre a usuarios administradores del buscador para funcionalidad social
+    query = query.filter(~Rol.nombre.in_(["Administrador", "Superadministrador"]))
+
+    # Excluir al propio usuario que realiza la búsqueda
+    current_user_id = payload.get("sub")
+    if current_user_id:
+        query = query.filter(Usuario.id != int(current_user_id))
+
     if fecha_inicio:
         query = query.filter(func.date(Usuario.fecha_hora_registro) >= fecha_inicio)
     if fecha_fin:
@@ -286,6 +293,7 @@ async def solicitarConductor(
     modelo:                  str            = Form(None),
     anio:                    int            = Form(None),
     foto_perfil:             UploadFile     = File(...),
+    foto_ine:                UploadFile     = File(...),
     fotos_vehiculo:          List[UploadFile] = File(None),
     db:                      Session        = Depends(getDB),
     payload:                 dict           = Depends(verifyToken)
@@ -294,11 +302,26 @@ async def solicitarConductor(
     if not usuario:
         raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
 
+    # Verificar si ya existe una solicitud pendiente
+    solicitud_existente = db.query(SolicitudConductor).filter(
+        SolicitudConductor.id_usuario == id_usuario,
+        SolicitudConductor.estatus == "Pendiente"
+    ).first()
+    if solicitud_existente:
+        raise HTTPException(status_code = 400, detail = "Ya tienes una solicitud de conductor pendiente de revisión.")
+
     # Guardar foto de perfil temporalmente
     ruta_foto_perfil = await guardarImagen(
         archivo          = foto_perfil,
         carpeta_destino  = RUTA_CONDUCTORES,
         nombre_base      = f"req_conductor_{id_usuario}"
+    )
+
+    # Guardar foto INE
+    ruta_foto_ine = await guardarImagen(
+        archivo          = foto_ine,
+        carpeta_destino  = RUTA_CONDUCTORES,
+        nombre_base      = f"req_ine_{id_usuario}"
     )
 
     # Guardar fotos vehiculo
@@ -316,12 +339,12 @@ async def solicitarConductor(
         id_usuario = id_usuario,
         telefono = telefono,
         licencia_conducir = licencia_conducir,
-        url_foto_ine = "ine_placeholder.png",
+        url_foto_ine = ruta_foto_ine,
         clabe_interbancaria = clabe_interbancaria,
         nombre_banco = nombre_banco,
         nombre_titular_cuenta = nombre_titular_cuenta,
         url_foto_perfil = ruta_foto_perfil,
-        placa = placa,
+        placa = validar_placa_queretaro(placa) if placa else None,
         color = color,
         modelo = modelo,
         anio = anio,
@@ -332,6 +355,22 @@ async def solicitarConductor(
     db.add(solicitud)
     db.commit()
     db.refresh(solicitud)
+    return solicitud
+
+
+@router.get("/solicitudes_conductores/me", response_model = schemas.SolicitudConductorResponse, summary = "Obtener mi última solicitud de conductor")
+def obtenerMiSolicitudConductor(
+    db: Session = Depends(getDB),
+    payload: dict = Depends(verifyToken)
+):
+    id_usuario = int(payload.get("sub"))
+    solicitud = db.query(SolicitudConductor).filter(
+        SolicitudConductor.id_usuario == id_usuario
+    ).order_by(SolicitudConductor.fecha_hora_registro.desc()).first()
+    
+    if not solicitud:
+        raise HTTPException(status_code = 404, detail = "No se encontró ninguna solicitud de conductor para este usuario")
+        
     return solicitud
 
 
@@ -511,7 +550,7 @@ async def crearVehiculo(
 
     nuevo_vehiculo = Vehiculo(
         id_conductor = conductor.id,
-        placa        = placa.upper(),
+        placa        = validar_placa_queretaro(placa),
         color        = color,
         modelo       = modelo,
         anio         = anio,

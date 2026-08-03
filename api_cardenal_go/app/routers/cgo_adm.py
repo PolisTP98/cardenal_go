@@ -313,6 +313,7 @@ def obtenerSolicitudesPendientes(skip: int = 0, limit: int = 100, db: Session = 
 
 @router.post("/solicitudes_conductores/{solicitud_id}/procesar", summary="Aprobar o rechazar solicitud de conductor")
 def procesarSolicitudConductor(solicitud_id: int, schema_in: schemas.ProcesarSolicitudSchema, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    print(f"[DEBUG] procesarSolicitudConductor -> ID: {solicitud_id} | Payload Recibido: {schema_in}")
     solicitud = db.query(SolicitudConductor).filter(SolicitudConductor.id == solicitud_id).first()
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
@@ -359,13 +360,13 @@ def procesarSolicitudConductor(solicitud_id: int, schema_in: schemas.ProcesarSol
         solicitud.estatus = "Aprobada"
         
         # 5. Notificar
-        notif = Notificacion(id_usuario=solicitud.id_usuario, id_tipo_notificacion=1, titulo="Solicitud Aprobada", mensaje="¡Felicidades! Ahora eres conductor de Cardenal GO.")
+        notif = Notificacion(id_usuario=solicitud.id_usuario, id_tipo_notificacion=1, titulo="Solicitud Aprobada", cuerpo="¡Felicidades! Ahora eres conductor de Cardenal GO.")
         db.add(notif)
         
     elif schema_in.accion == "Rechazar":
         solicitud.estatus = "Rechazada"
         solicitud.motivo_rechazo = schema_in.motivo_rechazo
-        notif = Notificacion(id_usuario=solicitud.id_usuario, id_tipo_notificacion=1, titulo="Solicitud Rechazada", mensaje=f"Tu solicitud fue rechazada. Motivo: {schema_in.motivo_rechazo}")
+        notif = Notificacion(id_usuario=solicitud.id_usuario, id_tipo_notificacion=1, titulo="Solicitud Rechazada", cuerpo=f"Tu solicitud fue rechazada. Motivo: {schema_in.motivo_rechazo}")
         db.add(notif)
     else:
         raise HTTPException(status_code=400, detail="Acción inválida")

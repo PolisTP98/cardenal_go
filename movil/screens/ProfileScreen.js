@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
-import { getMe, getUsuario, actualizarFotoPerfil } from '../src/api/usuariosApi';
+import { getMe, getUsuario, actualizarFotoPerfil, getMiSolicitudConductor } from '../src/api/usuariosApi';
 import {
   getRelacionesSociales,
   enviarSolicitudAmistad,
@@ -29,6 +29,7 @@ export default function ProfileScreen({ navigation, route }) {
   const [socialLoading, setSocialLoading] = useState(false);
   const [actualizandoFoto, setActualizandoFoto] = useState(false);
   const [visorFotoUri, setVisorFotoUri] = useState(null);
+  const [miSolicitud, setMiSolicitud] = useState(null);
 
   const fetchProfileData = async () => {
     try {
@@ -36,6 +37,16 @@ export default function ProfileScreen({ navigation, route }) {
       if (esPropioPerfil) {
         const data = await getMe();
         setProfile(data);
+        if (data.originalRole !== 'Conductor') {
+          try {
+            const req = await getMiSolicitudConductor();
+            setMiSolicitud(req);
+          } catch (e) {
+            if (e.response?.status !== 404) {
+              console.log('Error fetching mi solicitud:', e);
+            }
+          }
+        }
       } else {
         const [profileData, relaciones] = await Promise.all([
           getUsuario(usuarioId),
@@ -336,7 +347,7 @@ export default function ProfileScreen({ navigation, route }) {
               </TouchableOpacity>
             )}
 
-            {user?.originalRole !== 'Conductor' && isPassenger && (
+            {user?.originalRole !== 'Conductor' && isPassenger && !miSolicitud && (
               <TouchableOpacity
                 style={styles.driverBanner}
                 activeOpacity={0.9}
@@ -348,6 +359,36 @@ export default function ProfileScreen({ navigation, route }) {
                   <Text style={styles.bannerBtnText}>Registrar Vehículo</Text>
                 </View>
               </TouchableOpacity>
+            )}
+
+            {user?.originalRole !== 'Conductor' && miSolicitud?.estatus === 'Pendiente' && (
+              <View style={[styles.driverBanner, { backgroundColor: COLORS.warning, opacity: 0.9 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                  <Ionicons name="time" size={24} color="#FFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.bannerTitle}>Pendiente de revisión</Text>
+                </View>
+                <Text style={styles.bannerSub}>
+                  Tu solicitud enviada el {new Date(miSolicitud.fecha_hora_registro).toLocaleDateString()} ya está siendo revisada por un administrador.
+                </Text>
+              </View>
+            )}
+
+            {user?.originalRole !== 'Conductor' && miSolicitud?.estatus === 'Rechazada' && (
+              <View style={[styles.driverBanner, { backgroundColor: COLORS.danger }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                  <Ionicons name="alert-circle" size={24} color="#FFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.bannerTitle}>Solicitud rechazada</Text>
+                </View>
+                <Text style={styles.bannerSub}>
+                  Motivo: {miSolicitud.motivo_rechazo || 'No especificado'}
+                </Text>
+                <TouchableOpacity 
+                  style={[styles.bannerButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                  onPress={() => navigation.navigate('DriverRegistration', { prefill: miSolicitud })}
+                >
+                  <Text style={styles.bannerBtnText}>Enviar nueva solicitud</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             <Card style={styles.menuCard}>
