@@ -82,27 +82,19 @@ def obtener_fecha_registro(u):
 @requiere_auth(["Superadministrador", "Administrador"])
 def dashboard_usuarios():
     try:
-        res = requests.get(f"{API_URL}/api/usu/", headers = get_headers())
-        usuarios_data = res.json() if res.status_code == 200 else []
+        res = requests.get(f"{API_URL}/api/adm/dashboard/usuarios", headers = get_headers())
+        data = res.json() if res.status_code == 200 else {}
     except:
-        usuarios_data = []
-    total = len(usuarios_data)
-    c_pas = sum(1 for u in usuarios_data if normalizar_rol(u) == "Pasajero")
-    c_con = sum(1 for u in usuarios_data if normalizar_rol(u) == "Conductor")
-    c_adm = sum(1 for u in usuarios_data if normalizar_rol(u) == "Administrador")
-    c_sadm = sum(1 for u in usuarios_data if normalizar_rol(u) == "Superadministrador")
+        data = {}
+        
+    total = data.get("total", 0)
+    c_pas = data.get("pasajeros", 0)
+    c_con = data.get("conductores", 0)
+    c_adm = data.get("administradores", 0)
+    c_sadm = 0 # Incluido en admins por simplicidad en este conteo
+    
     conteo = {"Pasajero": c_pas, "Conductor": c_con, "Administrador": c_adm, "Superadministrador": c_sadm}
-    regs = []
-    for u in usuarios_data:
-        fecha = obtener_fecha_registro(u)
-        rol_norm = normalizar_rol(u)
-        if fecha:
-            regs.append({
-                "fecha": fecha, 
-                "fecha_registro": fecha, 
-                "categoria": rol_norm, 
-                "rol": rol_norm
-            })
+    # Para el gráfico, enviaremos un json vacío ya que no estamos jalando todos los registros
     return render_template(
         "dashboard_usuarios.html", 
         total_usuarios = total, 
@@ -111,7 +103,7 @@ def dashboard_usuarios():
         count_admin = c_adm, 
         count_superadmin = c_sadm, 
         conteo_roles_json = json.dumps(conteo), 
-        registros_json = json.dumps(regs), 
+        registros_json = json.dumps([]), 
         rol = session.get("role"), 
         active_page = "dashboard_usuarios"
     )
@@ -120,27 +112,25 @@ def dashboard_usuarios():
 @requiere_auth(["Superadministrador", "Administrador"])
 def dashboard_incidencias():
     try:
-        res = requests.get(f"{API_URL}/api/adm/reportes", headers = get_headers())
-        reportes_data = res.json() if res.status_code == 200 else []
+        res = requests.get(f"{API_URL}/api/adm/dashboard/incidencias", headers = get_headers())
+        data = res.json() if res.status_code == 200 else {}
     except:
-        reportes_data = []
+        data = {}
         
-    total = len(reportes_data)
-    c_pas = sum(1 for r in reportes_data if r.get("reportado", {}).get("rol") == "Pasajero")
-    c_con = sum(1 for r in reportes_data if r.get("reportado", {}).get("rol") == "Conductor")
-    c_adm = sum(1 for r in reportes_data if r.get("reportado", {}).get("rol") == "Administrador")
-    c_sadm = sum(1 for r in reportes_data if r.get("reportado", {}).get("rol") == "Superadministrador")
-    conteo = {"Pasajero": c_pas, "Conductor": c_con, "Administrador": c_adm, "Superadministrador": c_sadm}
-    regs = [{"fecha_registro": r.get("fecha_hora_registro", "")[:10], "rol": r.get("reportado", {}).get("rol")} for r in reportes_data if r.get("fecha_hora_registro")]
+    total = data.get("total", 0)
+    c_pen = data.get("pendientes", 0)
+    c_pro = data.get("en_proceso", 0)
+    c_res = data.get("resueltas", 0)
+    
     return render_template(
         "dashboard_incidencias.html", 
         total_incidencias = total, 
-        count_pasajero = c_pas, 
-        count_conductor = c_con, 
-        count_admin = c_adm, 
-        count_superadmin = c_sadm, 
-        conteo_roles_json = json.dumps(conteo), 
-        registros_json = json.dumps(regs), 
+        count_pasajero = c_pen, 
+        count_conductor = c_res, 
+        count_admin = c_pro, 
+        count_superadmin = 0, 
+        conteo_roles_json = json.dumps({"Pendiente": c_pen, "En Proceso": c_pro, "Resuelta": c_res}), 
+        registros_json = json.dumps([]), 
         rol = session.get("role"), 
         active_page = "dashboard_incidencias"
     )
@@ -149,26 +139,24 @@ def dashboard_incidencias():
 @requiere_auth(["Superadministrador", "Administrador"])
 def dashboard_viajes():
     try:
-        res = requests.get(f"{API_URL}/api/via/", headers = get_headers())
-        viajes_data = res.json() if res.status_code == 200 else []
+        res = requests.get(f"{API_URL}/api/adm/dashboard/viajes", headers = get_headers())
+        data = res.json() if res.status_code == 200 else {}
     except:
-        viajes_data = []
-    total = len(viajes_data)
-    c_prog = sum(1 for v in viajes_data if v.get("estatus", "").lower() == "programado")
-    c_enc = sum(1 for v in viajes_data if v.get("estatus", "").lower() == "en curso")
-    c_fin = sum(1 for v in viajes_data if v.get("estatus", "").lower() == "finalizado")
-    c_can = sum(1 for v in viajes_data if v.get("estatus", "").lower() == "cancelado")
-    conteo = {"Programado": c_prog, "En curso": c_enc, "Finalizado": c_fin, "Cancelado": c_can}
-    regs = [{"fecha_registro": v.get("fecha_registro", "")[:10], "estatus": v.get("estatus")} for v in viajes_data if v.get("fecha_registro")]
+        data = {}
+        
+    total = data.get("total", 0)
+    c_act = data.get("activos", 0)
+    c_fin = data.get("finalizados", 0)
+    c_can = data.get("cancelados", 0)
+    
     return render_template(
         "dashboard_viajes.html", 
         total_viajes = total, 
-        count_programado = c_prog, 
-        count_en_curso = c_enc, 
-        count_finalizado = c_fin, 
-        count_cancelado = c_can, 
-        conteo_estatus_json = json.dumps(conteo), 
-        registros_json = json.dumps(regs), 
+        count_activos = c_act, 
+        count_finalizados = c_fin, 
+        count_cancelados = c_can, 
+        conteo_roles_json = json.dumps({"Activos": c_act, "Finalizados": c_fin, "Cancelados": c_can}), 
+        registros_json = json.dumps([]), 
         rol = session.get("role"), 
         active_page = "dashboard_viajes"
     )
@@ -336,9 +324,18 @@ def exportar(modulo, formato):
 @requiere_auth(["Superadministrador", "Administrador"])
 def obtener_notificaciones():
     try:
-        res = requests.get(f"{API_URL}/api/adm/solicitudes_conductores/pendientes", headers = get_headers())
+        res = requests.get(f"{API_URL}/api/adm/solicitudes_conductores", headers = get_headers())
         if res.status_code == 200:
-            return jsonify(res.json())
+            solicitudes = res.json()
+            notificaciones = []
+            for sol in solicitudes:
+                notificaciones.append({
+                    "id_notificacion": sol["id"],
+                    "titulo": f"Nueva solicitud de conductor (Usuario {sol['id_usuario']})",
+                    "cuerpo": f"Placa: {sol['placa']} - Modelo: {sol['modelo']}",
+                    "datos_solicitud": sol
+                })
+            return jsonify(notificaciones)
         return jsonify([])
     except Exception:
         return jsonify([])
@@ -354,7 +351,7 @@ def procesar_solicitud_conductor():
         endpoint = f"{API_URL}/api/adm/solicitudes_conductores/{id_notificacion}/procesar"
         res = requests.post(
             endpoint,
-            json = {"accion": accion, "motivo": motivo},
+            json = {"accion": accion, "motivo_rechazo": motivo},
             headers = get_headers()
         )
         if res.status_code == 200:

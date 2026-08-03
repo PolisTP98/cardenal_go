@@ -216,6 +216,13 @@ create table cgo_usu.solicitudes_conductores(
     clabe_interbancaria varchar(18),
     nombre_banco varchar(50),
     nombre_titular_cuenta varchar(255),
+    url_foto_perfil varchar(255),
+    placa varchar(15),
+    color varchar(30),
+    modelo varchar(50),
+    anio smallint,
+    fotos_vehiculo jsonb,
+    motivo_rechazo varchar(500),
     estatus varchar(20) default 'Pendiente',
     fecha_hora_registro timestamptz(3) not null default now()
 );
@@ -359,6 +366,7 @@ create table cgo_soc.mensajes_chats(
     id_emisor int not null references cgo_usu.usuarios(id) on update cascade,
     id_receptor int not null references cgo_usu.usuarios(id) on update cascade,
     contenido text not null,
+    url_imagen varchar(255),
     leido boolean default false,
     fecha_hora_registro timestamptz(3) not null default now()
 );

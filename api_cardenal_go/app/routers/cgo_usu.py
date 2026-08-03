@@ -10,7 +10,7 @@ from sqlalchemy import func
 from typing import List, Optional
 from datetime import date
 from data.database import getDB
-from data.models import Usuario, Rol, RolUsuario, Conductor, Vehiculo, TarjetaPasajero
+from data.models import Usuario, Rol, RolUsuario, Conductor, Vehiculo, TarjetaPasajero, SolicitudConductor
 from models import schemas
 from security.auth import (
     verifyPassword, 
@@ -100,9 +100,6 @@ def crearUsuario(usuario_in: schemas.UsuarioCreate, db: Session = Depends(getDB)
     if existe:
         raise HTTPException(status_code = 400, detail = "La matrícula o correo ya están registrados")
     nuevo_usuario = Usuario(
-        nombre_completo = usuario_in.nombre_completo,
-        matricula = usuario_in.matricula,
-        correo_institucional = usuario_in.correo_institucional,
         nombre_completo = usuario_in.nombre_completo, 
         matricula = usuario_in.matricula, 
         correo_institucional = usuario_in.correo_institucional, 
@@ -276,6 +273,68 @@ def eliminarUsuario(
 # | CONDUCTORES Y VEHÍCULOS          |
 # ------------------------------------
 
+@router.post("/solicitudes_conductores", response_model = schemas.SolicitudConductorResponse, status_code = status.HTTP_201_CREATED, summary = "Solicitar ser conductor")
+async def solicitarConductor(
+    id_usuario:              int            = Form(...),
+    telefono:                str            = Form(...),
+    licencia_conducir:       str            = Form(...),
+    clabe_interbancaria:     Optional[str]  = Form(None),
+    nombre_banco:            Optional[str]  = Form(None),
+    nombre_titular_cuenta:   Optional[str]  = Form(None),
+    placa:                   str            = Form(None),
+    color:                   str            = Form(None),
+    modelo:                  str            = Form(None),
+    anio:                    int            = Form(None),
+    foto_perfil:             UploadFile     = File(...),
+    fotos_vehiculo:          List[UploadFile] = File(None),
+    db:                      Session        = Depends(getDB),
+    payload:                 dict           = Depends(verifyToken)
+):
+    usuario = db.query(Usuario).filter(Usuario.id == id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+
+    # Guardar foto de perfil temporalmente
+    ruta_foto_perfil = await guardarImagen(
+        archivo          = foto_perfil,
+        carpeta_destino  = RUTA_CONDUCTORES,
+        nombre_base      = f"req_conductor_{id_usuario}"
+    )
+
+    # Guardar fotos vehiculo
+    rutas_fotos_vehiculo = []
+    if fotos_vehiculo:
+        for idx, foto in enumerate(fotos_vehiculo):
+            ruta = await guardarImagen(
+                archivo         = foto,
+                carpeta_destino = RUTA_VEHICULOS,
+                nombre_base     = f"req_vehiculo_{id_usuario}_{idx}"
+            )
+            rutas_fotos_vehiculo.append(ruta)
+
+    solicitud = SolicitudConductor(
+        id_usuario = id_usuario,
+        telefono = telefono,
+        licencia_conducir = licencia_conducir,
+        url_foto_ine = "ine_placeholder.png",
+        clabe_interbancaria = clabe_interbancaria,
+        nombre_banco = nombre_banco,
+        nombre_titular_cuenta = nombre_titular_cuenta,
+        url_foto_perfil = ruta_foto_perfil,
+        placa = placa,
+        color = color,
+        modelo = modelo,
+        anio = anio,
+        fotos_vehiculo = rutas_fotos_vehiculo,
+        estatus = "Pendiente"
+    )
+
+    db.add(solicitud)
+    db.commit()
+    db.refresh(solicitud)
+    return solicitud
+
+
 @router.post("/conductores", response_model = schemas.ConductorResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar datos de conductor")
 async def registrarConductor(
     id_usuario:              int            = Form(...),
@@ -393,11 +452,15 @@ def obtenerConductorPorId(conductor_id: int, db: Session = Depends(getDB), paylo
 @router.patch("/conductores/{conductor_id}", response_model = schemas.ConductorResponse, summary = "Actualizar conductor por ID")
 def actualizarConductor(conductor_id: int, conductor_in: schemas.ConductorUpdate, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     conductor = db.query(Conductor).filter(Conductor.id == conductor_id).first()
+    if not conductor:
         raise HTTPException(status_code = 404, detail = "Conductor no encontrado")
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(conductor.id_usuario), is_admin)
+    for key, value in conductor_in.model_dump(exclude_unset = True).items():
         setattr(conductor, key, value)
     db.commit()
     db.refresh(conductor)
+    return conductor
 
 @router.delete("/conductores/{conductor_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar conductor por ID")
 def eliminarConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
@@ -495,9 +558,7 @@ def buscarVehiculos(
 def obtenerVehiculosPorConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     return db.query(Vehiculo).filter(Vehiculo.id_conductor == conductor_id).all()
 
-@router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos por ID de conductor")
-def obtenerVehiculosPorIdConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-@router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor")
+@router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor por ID")
 def obtenerVehiculosConductor(
     conductor_id: int,
     db: Session = Depends(getDB),

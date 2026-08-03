@@ -115,19 +115,36 @@
                 <div class="modal-body">
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <strong>ID:</strong> <span id="detUsuId"></span><br>
+                            <h6 class="text-primary">Datos Personales</h6>
+                            <strong>ID Usuario:</strong> <span id="detUsuId"></span><br>
                             <strong>Teléfono:</strong> <span id="detTelefono"></span><br>
-                            <strong>Licencia de conducir:</strong> <span id="detLicencia"></span><br>
+                            <strong>Licencia:</strong> <span id="detLicencia"></span><br>
                         </div>
                         <div class="col-md-6 mb-3">
+                            <h6 class="text-primary">Datos Bancarios</h6>
                             <strong>CLABE:</strong> <span id="detClabe"></span><br>
                             <strong>Banco:</strong> <span id="detBanco"></span><br>
                             <strong>Titular:</strong> <span id="detTitular"></span><br>
                         </div>
                     </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <h6 class="text-primary">Datos del Vehículo</h6>
+                            <strong>Placa:</strong> <span id="detPlaca"></span><br>
+                            <strong>Modelo:</strong> <span id="detModelo"></span><br>
+                            <strong>Color (Hex):</strong> <span id="detColor"></span> 
+                            <span id="detColorMuestra" style="display:inline-block; width:20px; height:20px; border:1px solid #ccc; border-radius:50%; vertical-align:middle; margin-left:5px;"></span><br>
+                            <strong>Año:</strong> <span id="detAnio"></span><br>
+                        </div>
+                    </div>
                     <div class="mb-3 text-center">
                         <strong>INE / Documento de identidad:</strong><br>
                         <img id="detFotoIne" src="" alt="Foto INE" class="img-fluid mt-2 rounded border" style="max-height: 300px;">
+                    </div>
+                    <div class="mb-3 text-center" id="divFotosVehiculo" style="display:none;">
+                        <strong>Fotos del Vehículo:</strong><br>
+                        <div id="contenedorFotosVehiculo" class="d-flex flex-wrap justify-content-center gap-2 mt-2"></div>
                     </div>
                     <hr>
                     <div class="mb-3">
@@ -185,10 +202,40 @@
             document.getElementById('detBanco').textContent = datos.nombre_banco || 'N/A';
             document.getElementById('detTitular').textContent = datos.nombre_titular_cuenta || 'N/A';
             document.getElementById('detFotoIne').src = datos.url_foto_ine;
+            
+            // Nuevos datos del vehiculo
+            document.getElementById('detPlaca').textContent = datos.placa || 'N/A';
+            document.getElementById('detModelo').textContent = datos.modelo || 'N/A';
+            document.getElementById('detAnio').textContent = datos.anio || 'N/A';
+            document.getElementById('detColor').textContent = datos.color || 'N/A';
+            const colorMuestra = document.getElementById('detColorMuestra');
+            if (datos.color && datos.color.startsWith('#')) {
+                colorMuestra.style.backgroundColor = datos.color;
+                colorMuestra.style.display = 'inline-block';
+            } else {
+                colorMuestra.style.display = 'none';
+            }
+
+            const divFotosVehiculo = document.getElementById('divFotosVehiculo');
+            const contenedorFotos = document.getElementById('contenedorFotosVehiculo');
+            contenedorFotos.innerHTML = '';
+            if (datos.fotos_vehiculo && datos.fotos_vehiculo.length > 0) {
+                divFotosVehiculo.style.display = 'block';
+                datos.fotos_vehiculo.forEach(url => {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.className = 'img-fluid rounded border';
+                    img.style.maxHeight = '150px';
+                    contenedorFotos.appendChild(img);
+                });
+            } else {
+                divFotosVehiculo.style.display = 'none';
+            }
+
             document.getElementById('motivoRechazo').value = '';
             
             const modalNotif = bootstrap.Modal.getInstance(document.getElementById('modalNotificacionesGlobal'));
-            modalNotif.hide();
+            if(modalNotif) modalNotif.hide();
             
             const modalDetalle = new bootstrap.Modal(document.getElementById('modalDetalleSolicitudConductor'));
             modalDetalle.show();
@@ -196,7 +243,7 @@
 
         function aceptarSolicitudConductor() {
             const idNotificacion = document.getElementById('detSolicitudId').value;
-            procesarSolicitudConductor(idNotificacion, 'aceptar', '');
+            procesarSolicitudConductor(idNotificacion, 'Aprobar', '');
         }
 
         function rechazarSolicitudConductor() {
@@ -206,7 +253,7 @@
                 alert('Debes ingresar un motivo detallado de rechazo');
                 return;
             }
-            procesarSolicitudConductor(idNotificacion, 'rechazar', motivo);
+            procesarSolicitudConductor(idNotificacion, 'Rechazar', motivo);
         }
 
         function procesarSolicitudConductor(idNotificacion, accion, motivo) {

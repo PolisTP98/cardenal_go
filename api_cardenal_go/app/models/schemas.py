@@ -313,6 +313,13 @@ class SolicitudConductorResponse(BaseModel):
     clabe_interbancaria: Optional[str]
     nombre_banco: Optional[str]
     nombre_titular_cuenta: Optional[str]
+    url_foto_perfil: Optional[str]
+    placa: Optional[str]
+    color: Optional[str]
+    modelo: Optional[str]
+    anio: Optional[int]
+    fotos_vehiculo: Optional[list]
+    motivo_rechazo: Optional[str]
     estatus: str
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)

@@ -183,17 +183,22 @@ def crearSolicitud(solicitud_in: schemas.SolicitudViajeCreate, db: Session = Dep
     ).first()
     if duplicada:
         raise HTTPException(status_code = 409, detail = "Ya tienes una solicitud activa para este viaje")
+    
     datos_solicitud = solicitud_in.model_dump()
     recogida = datos_solicitud["ubicacion_recogida"]
     bajada = datos_solicitud["ubicacion_bajada"]
+    
+    # Convertir GeoPoint a WKT de forma robusta
     if isinstance(recogida, dict) and "coordinates" in recogida:
         datos_solicitud["ubicacion_recogida"] = f"SRID=4326;POINT({recogida['coordinates'][0]} {recogida['coordinates'][1]})"
     else:
         datos_solicitud["ubicacion_recogida"] = f"SRID=4326;POINT({solicitud_in.ubicacion_recogida.longitude} {solicitud_in.ubicacion_recogida.latitude})"
+        
     if isinstance(bajada, dict) and "coordinates" in bajada:
         datos_solicitud["ubicacion_bajada"] = f"SRID=4326;POINT({bajada['coordinates'][0]} {bajada['coordinates'][1]})"
     else:
         datos_solicitud["ubicacion_bajada"] = f"SRID=4326;POINT({solicitud_in.ubicacion_bajada.longitude} {solicitud_in.ubicacion_bajada.latitude})"
+        
     nueva_solicitud = SolicitudViaje(**datos_solicitud)
     db.add(nueva_solicitud)
     db.commit()
@@ -264,6 +269,7 @@ def actualizarSolicitud(solicitud_id: int, solicitud_in: schemas.SolicitudViajeU
     solicitud = db.query(SolicitudViaje).filter(SolicitudViaje.id == solicitud_id).first()
     if not solicitud:
         raise HTTPException(status_code = 404, detail = "Solicitud de viaje no encontrada")
+        
     nuevo_estatus = solicitud_in.id_estatus
     if nuevo_estatus is not None:
         if nuevo_estatus == 3:  # Aceptada
@@ -272,6 +278,17 @@ def actualizarSolicitud(solicitud_id: int, solicitud_in: schemas.SolicitudViajeU
                 raise HTTPException(status_code = 400, detail = "No hay lugares disponibles")
             if viaje:
                 viaje.asientos_disponibles -= 1
+                
+            # AUTO-CREAR CHAT DEL VIAJE SI NO EXISTE AUN
+            from data.models import Chat
+            chat_existente = db.query(Chat).filter(
+                Chat.id_viaje == solicitud.id_viaje,
+                Chat.id_tipo_chat == 1
+            ).first()
+            if not chat_existente:
+                nuevo_chat = Chat(id_tipo_chat = 1, id_viaje = solicitud.id_viaje)
+                db.add(nuevo_chat)
+                
         elif nuevo_estatus == 5 and solicitud.id_estatus == 3:  # Cancelada o rechazada tras haber sido aceptada
             viaje = db.query(Viaje).filter(Viaje.id == solicitud.id_viaje).first()
             if viaje:
@@ -437,130 +454,6 @@ def eliminarHistorialUbicacion(historial_id: int, db: Session = Depends(getDB), 
 
 
 # ------------------------------------
-# | OPERACIONES CRUD DE SOLICITUDES  |
-# ------------------------------------
-
-@router.post("/solicitudes", response_model = schemas.SolicitudViajeResponse, status_code = status.HTTP_201_CREATED, summary = "Crear solicitud de viaje")
-def crearSolicitud(
-    sol: schemas.SolicitudViajeCreate,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    # Validar que el viaje existe y tiene asientos disponibles
-    viaje = db.query(Viaje).filter(Viaje.id == sol.id_viaje).first()
-    if not viaje:
-        raise HTTPException(status_code = 404, detail = "Viaje no encontrado")
-    if viaje.asientos_disponibles < 1:
-        raise HTTPException(status_code = 400, detail = "El viaje no tiene lugares disponibles")
-    if viaje.id_estatus != 1:
-        raise HTTPException(status_code = 400, detail = "El viaje no está disponible para solicitudes")
-    # Evitar solicitud duplicada activa (Pendiente=1, Negociando=2, Aceptada=3)
-    duplicada = db.query(SolicitudViaje).filter(
-        SolicitudViaje.id_viaje == sol.id_viaje,
-        SolicitudViaje.id_pasajero == sol.id_pasajero,
-        SolicitudViaje.id_estatus.in_([1, 2, 3])
-    ).first()
-    if duplicada:
-        raise HTTPException(status_code = 409, detail = "Ya tienes una solicitud activa para este viaje")
-    datos = sol.model_dump()
-    # Convertir GeoPoint a WKT
-    recogida = datos["ubicacion_recogida"]
-    bajada = datos["ubicacion_bajada"]
-    datos["ubicacion_recogida"] = f"SRID=4326;POINT({recogida['coordinates'][0]} {recogida['coordinates'][1]})"
-    datos["ubicacion_bajada"] = f"SRID=4326;POINT({bajada['coordinates'][0]} {bajada['coordinates'][1]})"
-    nueva = SolicitudViaje(**datos)
-    db.add(nueva)
-    db.commit()
-    db.refresh(nueva)
-    return nueva
-
-@router.get("/solicitudes/pasajero/{pasajero_id}", response_model = List[schemas.SolicitudViajeResponse], summary = "Solicitudes de un pasajero")
-def obtenerSolicitudesPasajero(
-    pasajero_id: int,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    solicitudes = db.query(SolicitudViaje).options(
-        joinedload(SolicitudViaje.pasajero),
-        joinedload(SolicitudViaje.estatus),
-        joinedload(SolicitudViaje.viaje).joinedload(Viaje.vehiculo).joinedload(Vehiculo.conductor).joinedload(Conductor.usuario)
-    ).filter(SolicitudViaje.id_pasajero == pasajero_id).order_by(SolicitudViaje.fecha_hora_registro.desc()).all()
-    return solicitudes
-
-@router.get("/{viaje_id}/solicitudes", response_model = List[schemas.SolicitudViajeResponse], summary = "Solicitudes de un viaje (para conductor)")
-def obtenerSolicitudesViaje(
-    viaje_id: int,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    solicitudes = db.query(SolicitudViaje).options(
-        joinedload(SolicitudViaje.pasajero),
-        joinedload(SolicitudViaje.estatus)
-    ).filter(SolicitudViaje.id_viaje == viaje_id).order_by(SolicitudViaje.fecha_hora_registro.asc()).all()
-    return solicitudes
-
-@router.get("/solicitudes/{sol_id}", response_model = schemas.SolicitudViajeResponse, summary = "Detalle de solicitud por ID")
-def obtenerSolicitudPorId(
-    sol_id: int,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    sol = db.query(SolicitudViaje).options(
-        joinedload(SolicitudViaje.pasajero),
-        joinedload(SolicitudViaje.estatus),
-        joinedload(SolicitudViaje.viaje)
-    ).filter(SolicitudViaje.id == sol_id).first()
-    if not sol:
-        raise HTTPException(status_code = 404, detail = "Solicitud no encontrada")
-    return sol
-
-@router.put("/solicitudes/{sol_id}", response_model = schemas.SolicitudViajeResponse, summary = "Actualizar estatus de solicitud (aceptar / rechazar / cancelar)")
-def actualizarSolicitud(
-    sol_id: int,
-    sol_in: schemas.SolicitudViajeUpdate,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(requireRole(["Conductor", "Superadministrador", "Administrador"]))
-):
-    sol = db.query(SolicitudViaje).filter(SolicitudViaje.id == sol_id).first()
-    if not sol:
-        raise HTTPException(status_code = 404, detail = "Solicitud no encontrada")
-    # Permitir que conductor o admin actualice el estatus de la solicitud
-    # Se valida que el conductor es dueño del viaje asociado
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    # Obtener el viaje asociado a la solicitud
-    viaje = db.query(Viaje).filter(Viaje.id == sol.id_viaje).first()
-    if not viaje:
-        raise HTTPException(status_code = 404, detail = "Viaje no encontrado")
-    # Verificar que el usuario es propietario del viaje (conductor) o admin
-    verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
-    
-    nuevo_estatus = sol_in.id_estatus
-
-    if nuevo_estatus == 3:  # Aceptada
-        if viaje.asientos_disponibles < 1:
-            raise HTTPException(status_code = 400, detail = "No hay lugares disponibles")
-        viaje.asientos_disponibles -= 1
-        # AUTO-CREAR CHAT DEL VIAJE SI NO EXISTE AUN
-        chat_existente = db.query(Chat).filter(
-            Chat.id_viaje == sol.id_viaje,
-            Chat.id_tipo_chat == 1
-        ).first()
-        if not chat_existente:
-            nuevo_chat = Chat(id_tipo_chat = 1, id_viaje = sol.id_viaje)
-            db.add(nuevo_chat)
-    elif nuevo_estatus == 5 and sol.id_estatus == 3:  # Cancelada desde Aceptada → restaurar asiento
-        if viaje:
-            viaje.asientos_disponibles = min(
-                viaje.asientos_disponibles + 1,
-                viaje.asientos_totales
-            )
-
-    for key, value in sol_in.model_dump(exclude_unset = True).items():
-        setattr(sol, key, value)
-    db.commit()
-    db.refresh(sol)
-    return sol
-
 
 # --------------------------
 # | RECOMENDACIÓN DE IA    |

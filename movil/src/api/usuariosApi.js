@@ -26,7 +26,17 @@ export const getConductorByUsuario = async (usuarioId) => {
   return r.data;
 };
 
-// POST /api/usu/conductores
+// POST /api/usu/solicitudes_conductores
+export const solicitarSerConductor = async (formData) => {
+  const r = await apiClient.post('/api/usu/solicitudes_conductores', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return r.data;
+};
+
+// POST /api/usu/conductores (deprecated, used only for old flow or admin direct creation if any)
 export const registrarConductor = async (formData) => {
   const r = await apiClient.post('/api/usu/conductores', formData, {
     headers: {
