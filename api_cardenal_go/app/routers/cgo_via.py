@@ -661,19 +661,66 @@ def obtenerRecomendacionIA(
 # | GENERACIÓN DE REPORTES |
 # --------------------------
 
-@router.get("/reportes/{formato}", summary = "Generar reporte de viajes")
-def exportarReporteViajes(
-    formato: str,
-    db: Session = Depends(getDB),
+@router.post("/reportes/pdf", summary = "Generar reporte dinámico de viajes en PDF")
+def reporteViajesPDF(
+    filtro: schemas.ReporteFiltro, 
+    db: Session = Depends(getDB), 
     payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
 ):
-    lista_viajes = db.query(Viaje).all()
-    titulo = "reporte_de_viajes-cardenal_go"
-    if formato.lower() == "pdf":
-        return generarReportePDF(lista_viajes, titulo)
-    elif formato.lower() == "word":
-        return generarReporteWord(lista_viajes, titulo)
-    elif formato.lower() == "excel":
-        return generarReporteExcel(lista_viajes, titulo)
-    else:
-        raise HTTPException(status_code = 400, detail = "Formato no soportado. Usa PDF, Word o Excel")
+    lista_viajes_db = db.query(Viaje).filter(Viaje.id.in_(filtro.ids)).all()
+    viajes_dict = {v.id: v for v in lista_viajes_db}
+    viajes_ordenados = [viajes_dict[id_] for id_ in filtro.ids if id_ in viajes_dict]
+    datos = [
+        {
+            "ID": v.id, 
+            "Conductor ID": v.id_usuario_conductor, 
+            "Estatus": v.estatus, 
+            "Asientos Libres": v.asientos_disponibles, 
+            "Precio": float(v.precio_por_asiento or 0.0), 
+            "Salida": v.fecha_hora_salida.strftime("%Y-%m-%d %H:%M") if v.fecha_hora_salida else "N/A"
+        } 
+        for v in viajes_ordenados
+    ]
+    return generarReportePDF(datos, titulo = "reporte_de_viajes")
+
+@router.post("/reportes/excel", summary = "Generar reporte dinámico de viajes en Excel")
+def reporteViajesExcel(
+    filtro: schemas.ReporteFiltro, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
+):
+    lista_viajes_db = db.query(Viaje).filter(Viaje.id.in_(filtro.ids)).all()
+    viajes_dict = {v.id: v for v in lista_viajes_db}
+    viajes_ordenados = [viajes_dict[id_] for id_ in filtro.ids if id_ in viajes_dict]
+    datos = [
+        {
+            "ID": v.id, 
+            "Conductor ID": v.id_usuario_conductor, 
+            "Asientos Disponibles": v.asientos_disponibles, 
+            "Tarifa por Asiento": float(v.precio_por_asiento or 0.0), 
+            "Estatus": v.estatus, 
+            "Hora de Salida": v.fecha_hora_salida.strftime("%Y-%m-%d %H:%M:%S") if v.fecha_hora_salida else "N/A"
+        } 
+        for v in viajes_ordenados
+    ]
+    return generarReporteExcel(datos, titulo = "reporte_de_viajes")
+
+@router.post("/reportes/word", summary = "Generar reporte dinámico de viajes en Word")
+def reporteViajesWord(
+    filtro: schemas.ReporteFiltro, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
+):
+    lista_viajes_db = db.query(Viaje).filter(Viaje.id.in_(filtro.ids)).all()
+    viajes_dict = {v.id: v for v in lista_viajes_db}
+    viajes_ordenados = [viajes_dict[id_] for id_ in filtro.ids if id_ in viajes_dict]
+    datos = [
+        {
+            "ID": v.id, 
+            "Conductor ID": v.id_usuario_conductor, 
+            "Estatus": v.estatus, 
+            "Salida": v.fecha_hora_salida.strftime("%Y-%m-%d") if v.fecha_hora_salida else "N/A"
+        } 
+        for v in viajes_ordenados
+    ]
+    return generarReporteWord(datos, titulo = "reporte_de_viajes")

@@ -193,7 +193,6 @@ services:
   # ------------------------------------------------------------------
   # | (6) FRONTEND PARA SUPERADMINISTRADORES/ADMINISTRADORES (Flask) |
   # ------------------------------------------------------------------
-
   frontend:
     build:
       context: ./web
@@ -206,6 +205,8 @@ services:
       - FRONTEND_SECRET_KEY=${FRONTEND_SECRET_KEY}
     ports:
       - "5000:5000"
+    volumes:
+      - ./web:/app
     depends_on:
       - backend
     networks:

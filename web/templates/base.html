@@ -188,7 +188,7 @@
             document.getElementById('motivoRechazo').value = '';
             
             const modalNotif = bootstrap.Modal.getInstance(document.getElementById('modalNotificacionesGlobal'));
-            modalNotif.hide();
+            if(modalNotif) modalNotif.hide();
             
             const modalDetalle = new bootstrap.Modal(document.getElementById('modalDetalleSolicitudConductor'));
             modalDetalle.show();
@@ -225,7 +225,7 @@
             .then(data => {
                 if (data.success) {
                     const modalDetalle = bootstrap.Modal.getInstance(document.getElementById('modalDetalleSolicitudConductor'));
-                    modalDetalle.hide();
+                    if(modalDetalle) modalDetalle.hide();
                     cargarNotificaciones();
                     alert(data.message);
                     location.reload();
@@ -237,6 +237,51 @@
                 alert('Ocurrió un error en la comunicación con el servidor');
             });
         }
+
+        async function descargarReporteDinamico(formato, modulo, claseFila) {
+            const filasVisibles = Array.from(document.querySelectorAll(`tr.${claseFila}`))
+                                    .filter(fila => fila.style.display !== "none");
+
+            const ids = filasVisibles.map(fila => parseInt(fila.getAttribute("data-id"))).filter(id => !isNaN(id));
+
+            if (ids.length === 0) {
+                alert("No hay registros visibles en la tabla para exportar.");
+                return;
+            }
+
+            const url = `/api_local/reportes_dinamicos/${modulo}/${formato}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ ids: ids })
+                });
+
+                if (!response.ok) throw new Error('Error al procesar la descarga del reporte.');
+                
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                
+                let extension = "pdf";
+                if (formato === "excel") extension = "xlsx";
+                if (formato === "word") extension = "docx";
+                
+                a.download = `reporte_${modulo}_${new Date().toISOString().slice(0,10)}.${extension}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+            } catch (error) {
+                console.error(error);
+                alert("Ocurrió un error al generar el reporte.");
+            }
+        }
     </script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>

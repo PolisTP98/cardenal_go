@@ -243,19 +243,67 @@ def eliminarSancion(sancion_id: int, db: Session = Depends(getDB), payload: dict
 # | GENERACIÓN DE REPORTES |
 # --------------------------
 
-@router.get("/reportes/exportar/{formato}", summary = "Generar reporte de incidencias")
-def exportarReporteIncidencias(
-    formato: str, 
+@router.post("/reportes/pdf", summary = "Generar reporte dinámico de incidencias en PDF")
+def reporteIncidenciasPDF(
+    filtro: schemas.ReporteFiltro, 
     db: Session = Depends(getDB), 
     payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
 ):
-    lista_reportes = db.query(Reporte).all()
-    titulo = "reporte_de_incidencias_y_quejas-cardenal_go"
-    if formato.lower() == "pdf":
-        return generarReportePDF(lista_reportes, titulo)
-    elif formato.lower() == "word":
-        return generarReporteWord(lista_reportes, titulo)
-    elif formato.lower() == "excel":
-        return generarReporteExcel(lista_reportes, titulo)
-    else:
-        raise HTTPException(status_code = 400, detail = "Formato no soportado. Usa PDF, Word o Excel")
+    lista_reportes_db = db.query(Reporte).filter(Reporte.id.in_(filtro.ids)).all()
+    reportes_dict = {r.id: r for r in lista_reportes_db}
+    reportes_ordenados = [reportes_dict[id_] for id_ in filtro.ids if id_ in reportes_dict]
+    datos = [
+        {
+            "ID": r.id, 
+            "Título": r.titulo, 
+            "Estatus": r.estatus, 
+            "Creador ID": r.id_usuario_creador, 
+            "Fecha": r.fecha_hora_creacion.strftime("%Y-%m-%d %H:%M") if r.fecha_hora_creacion else "N/A"
+        } 
+        for r in reportes_ordenados
+    ]
+    return generarReportePDF(datos, titulo = "reporte_de_incidencias")
+
+@router.post("/reportes/excel", summary = "Generar reporte dinámico de incidencias en Excel")
+def reporteIncidenciasExcel(
+    filtro: schemas.ReporteFiltro, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
+):
+    lista_reportes_db = db.query(Reporte).filter(Reporte.id.in_(filtro.ids)).all()
+    reportes_dict = {r.id: r for r in lista_reportes_db}
+    reportes_ordenados = [reportes_dict[id_] for id_ in filtro.ids if id_ in reportes_dict]
+    datos = [
+        {
+            "ID": r.id, 
+            "Título": r.titulo, 
+            "Descripción": r.descripcion, 
+            "Estatus": r.estatus, 
+            "ID Usuario Reportado": r.id_usuario_reportado or "N/A", 
+            "ID Usuario Creador": r.id_usuario_creador, 
+            "Fecha de Creación": r.fecha_hora_creacion.strftime("%Y-%m-%d %H:%M:%S") if r.fecha_hora_creacion else "N/A"
+        } 
+        for r in reportes_ordenados
+    ]
+    return generarReporteExcel(datos, titulo = "reporte_de_incidencias")
+
+@router.post("/reportes/word", summary = "Generar reporte dinámico de incidencias en Word")
+def reporteIncidenciasWord(
+    filtro: schemas.ReporteFiltro, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
+):
+    lista_reportes_db = db.query(Reporte).filter(Reporte.id.in_(filtro.ids)).all()
+    reportes_dict = {r.id: r for r in lista_reportes_db}
+    reportes_ordenados = [reportes_dict[id_] for id_ in filtro.ids if id_ in reportes_dict]
+    datos = [
+        {
+            "ID": r.id, 
+            "Título": r.titulo, 
+            "Estatus": r.estatus, 
+            "Creador ID": r.id_usuario_creador, 
+            "Fecha": r.fecha_hora_creacion.strftime("%Y-%m-%d") if r.fecha_hora_creacion else "N/A"
+        } 
+        for r in reportes_ordenados
+    ]
+    return generarReporteWord(datos, titulo = "reporte_de_incidencias")

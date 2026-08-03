@@ -20,7 +20,6 @@ from pydantic import(
 # | SCHEMAS BASE Y UTILIDADES |
 # -----------------------------
 
-# REPRESENTACIÓN ESTÁNDAR GeoJSON PARA PUNTOS GEOGRÁFICOS PostGIS
 class GeoPoint(BaseModel):
     type: Literal["Point"] = "Point"
     coordinates: List[float] = Field(
@@ -40,11 +39,9 @@ class GeoPoint(BaseModel):
             raise ValueError("La latitud debe estar entre -90 y 90")
         return v
 
-# HELPER PARA CONVERTIR ELEMENTOS WKBElement DE GeoAlchemy2 A GeoPoint
 def parsePostgisPoint(value: Any) -> Any:
     if value is None or isinstance(value, dict):
         return value
-    # SI VIENE COMO OBJETO PERSISTIDO DE GeoAlchemy2
     if hasattr(value, "desc") or hasattr(value, "data"):
         try:
             import shapely.wkb
@@ -52,7 +49,6 @@ def parsePostgisPoint(value: Any) -> Any:
             return {"type": "Point", "coordinates": [point.x, point.y]}
         except Exception:
             pass
-    # SI VIENE COMO String WKT (EJEMPLO: "POINT(-100.38 20.58)")
     if isinstance(value, str) and value.startswith("POINT"):
         try:
             content = value.replace("POINT(", "").replace(")", "").strip()
@@ -83,7 +79,6 @@ class AuditoriaResponse(BaseModel):
 # | ESQUEMA "cgo_cat" |
 # ---------------------
 
-# ROLES DEL SISTEMA
 class RolCreate(BaseModel):
     nombre: str = Field(..., max_length = 20, examples = ["conductor"])
     descripcion: Optional[str] = Field(None, max_length = 255)
@@ -98,7 +93,6 @@ class RolResponse(BaseModel):
     nombre: str
     model_config = ConfigDict(from_attributes = True)
 
-# MÉTODOS DE PAGO DE LOS VIAJES
 class MetodoPagoCreate(BaseModel):
     nombre: str = Field(..., max_length = 20, examples = ["SPEI", "Efectivo"])
 
@@ -110,7 +104,6 @@ class MetodoPagoResponse(MetodoPagoCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# ESTATUS DE LOS VIAJES
 class EstatusViajeCreate(BaseModel):
     nombre: str = Field(..., max_length = 20)
     descripcion: Optional[str] = Field(None, max_length = 255)
@@ -124,7 +117,6 @@ class EstatusViajeResponse(EstatusViajeCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# ESTATUS DE LAS SOLICITUDES DE VIAJES (PASAJERO - CONDUCTOR)
 class EstatusSolicitudCreate(BaseModel):
     nombre: str = Field(..., max_length = 20)
     descripcion: Optional[str] = Field(None, max_length = 255)
@@ -138,7 +130,6 @@ class EstatusSolicitudResponse(EstatusSolicitudCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# MOTIVOS DE LOS REPORTES DE LOS USUARIOS
 class MotivoReporteCreate(BaseModel):
     nombre: str = Field(..., max_length = 50)
     gravedad: int = Field(..., ge = 1, le = 10, description = "Escala del 1 al 10")
@@ -152,7 +143,6 @@ class MotivoReporteResponse(MotivoReporteCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# ESTATUS DE LOS REPORTES DE LOS USUARIOS
 class EstatusReporteCreate(BaseModel):
     nombre: str = Field(..., max_length = 20)
     descripcion: Optional[str] = Field(None, max_length = 255)
@@ -166,7 +156,6 @@ class EstatusReporteResponse(EstatusReporteCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# ESTATUS DE LOS USUARIOS ENTRE SÍ (EN EL SENTIDO SOCIAL)
 class EstatusSocialCreate(BaseModel):
     nombre: str = Field(..., max_length = 20)
 
@@ -178,7 +167,6 @@ class EstatusSocialResponse(EstatusSocialCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# TIPOS DE CHATS DEL SISTEMA
 class TipoChatCreate(BaseModel):
     nombre: str = Field(..., max_length = 20)
 
@@ -190,7 +178,6 @@ class TipoChatResponse(TipoChatCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# ESTATUS DE LOS USUARIOS (INCLUYE SANCIONES POR MALA CONDUCTA)
 class EstatusUsuarioCreate(BaseModel):
     nombre: str = Field(..., max_length = 50)
     dias_sancion: Optional[int] = Field(None, ge = 0)
@@ -204,7 +191,6 @@ class EstatusUsuarioResponse(EstatusUsuarioCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# TIPOS DE NOTIFICACIONES DEL SISTEMA
 class TipoNotificacionCreate(BaseModel):
     nombre: str = Field(..., max_length = 50)
 
@@ -216,7 +202,6 @@ class TipoNotificacionResponse(TipoNotificacionCreate):
     id: int
     model_config = ConfigDict(from_attributes = True)
 
-# ESTATUS DE LOS PAGOS Y TRANSFERENCIAS FINANCIERAS
 class EstatusPagoCreate(BaseModel):
     nombre: str = Field(..., max_length = 20)
     descripcion: Optional[str] = Field(None, max_length = 255)
@@ -235,26 +220,25 @@ class EstatusPagoResponse(EstatusPagoCreate):
 # | ESQUEMA "cgo_usu" |
 # ---------------------
 
-# INFORMACIÓN DE LOS USUARIOS (CONDUCTORES, PASAJEROS Y ADMINISTRADORES)
 class UsuarioCreate(BaseModel):
-    nombre_completo: str = Field(..., max_length = 255, examples = ["Ysisidro Mora Jiménez Quiñones"])
-    matricula: str = Field(..., min_length = 9, max_length = 9, pattern = r"^[0-9]{9}$", examples = ["123456789"])
-    correo_institucional: EmailStr = Field(..., examples = ["cardenal@upq.edu.mx"])
-    contrasena_raw: str = Field(..., min_length = 8, description = "Contraseña en texto plano para procesar hash")
-    url_foto_perfil: Optional[str] = Field(default = "cardenal_upq.png", max_length = 255)
-    # VALIDAR EL DOMINIO DEL CORREO INSTITUCIONAL
+    nombre_completo: str
+    matricula: str = Field(..., min_length = 9, max_length = 9)
+    correo_institucional: EmailStr
+    contrasena_raw: str = Field(..., min_length = 8)
+    url_foto_perfil: Optional[str] = None
+
     @field_validator("correo_institucional")
-    @classmethod
     def validar_correo_upq(cls, v: str) -> str:
         if not v.endswith("@upq.edu.mx"):
             raise ValueError("El correo debe pertenecer al dominio @upq.edu.mx")
-        return v
+        return v.lower()
 
 class UsuarioUpdate(BaseModel):
-    nombre_completo: Optional[str] = Field(None, max_length = 255)
-    url_foto_perfil: Optional[str] = Field(None, max_length = 255)
+    nombre_completo: Optional[str] = None
+    matricula: Optional[str] = Field(None, min_length = 9, max_length = 9)
+    correo_institucional: Optional[EmailStr] = None
     contrasena_raw: Optional[str] = Field(None, min_length = 8)
-    model_config = ConfigDict(extra = "forbid")
+    url_foto_perfil: Optional[str] = None
 
 class UsuarioResponse(BaseModel):
     id: int
@@ -265,9 +249,10 @@ class UsuarioResponse(BaseModel):
     calificacion_pasajero: Decimal
     calificacion_conductor: Decimal
     fecha_hora_registro: datetime
-    model_config = ConfigDict(from_attributes = True)
+    rol: Optional[str] = None
+    class Config:
+        from_attributes = True
 
-# PERFIL BASICO PARA REFERENCIAS EN CHATS Y RELACIONES SOCIALES
 class UsuarioBasicoResponse(BaseModel):
     id: int
     nombre_completo: str
@@ -276,7 +261,6 @@ class UsuarioBasicoResponse(BaseModel):
     calificacion_conductor: Decimal
     model_config = ConfigDict(from_attributes = True)
 
-# ROLES Y ESTATUS DE LOS USUARIOS
 class RolUsuarioCreate(BaseModel):
     id_usuario: int
     id_rol: int = 1
@@ -285,7 +269,6 @@ class RolUsuarioCreate(BaseModel):
 class RolUsuarioUpdate(BaseModel):
     id_rol: Optional[int] = None
     id_estatus: Optional[int] = None
-    model_config = ConfigDict(extra = "forbid")
 
 class RolUsuarioResponse(BaseModel):
     id_usuario: int
@@ -322,7 +305,6 @@ class ProcesarSolicitudSchema(BaseModel):
     motivo: Optional[str] = ""
     model_config = ConfigDict(extra = "forbid")
 
-# INFORMACIÓN DEL USUARIO (SI DECIDE SER CONDUCTOR)
 class ConductorCreate(BaseModel):
     id_usuario: int
     telefono: str = Field(..., max_length = 20, pattern = r"^\+?[0-9\s\-]{10,20}$")
@@ -354,7 +336,6 @@ class ConductorResponse(BaseModel):
     usuario: Optional[UsuarioResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
-# INFORMACIÓN DE LOS VEHÍCULOS DE LOS CONDUCTORES
 class VehiculoCreate(BaseModel):
     id_conductor: int
     placa: str = Field(..., max_length = 15)
@@ -380,7 +361,6 @@ class VehiculoResponse(BaseModel):
     conductor: Optional[ConductorResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
-# INFORMACIÓN NO SENSIBLE DE LAS TARJETAS DE LOS PASAJEROS
 class TarjetaPasajeroCreate(BaseModel):
     id_usuario: int
     id_cliente_pasarela: str = Field(..., max_length = 255)
@@ -407,7 +387,6 @@ class TarjetaPasajeroResponse(BaseModel):
 # | ESQUEMA "cgo_via" |
 # ---------------------
 
-# PUBLICACIÓN DE VIAJES DE LOS CONDUCTORES
 class ViajeCreate(BaseModel):
     id_vehiculo: int
     id_estatus: int = 1
@@ -461,7 +440,6 @@ class ViajeResponse(BaseModel):
     def interceptarGeometria(cls, v: Any) -> Any:
         return parsePostgisPoint(v)
 
-# SOLICITUDES O RESERVAS DE VIAJES DE LOS PASAJEROS
 class SolicitudViajeCreate(BaseModel):
     id_viaje: int
     id_pasajero: int
@@ -502,7 +480,6 @@ class SolicitudViajeResponse(BaseModel):
     def interceptar_geometria(cls, v: Any) -> Any:
         return parsePostgisPoint(v)
 
-# REGISTROS DE LOS PAGOS Y TRANSFERENCIAS SPEI DE LOS PASAJEROS A LOS CONDUCTORES
 class PagoTransferenciaCreate(BaseModel):
     id_solicitud: int
     id_pasajero: int
@@ -532,7 +509,6 @@ class PagoTransferenciaResponse(BaseModel):
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)
 
-# HISTORIAL DE UBICACIONES EN VIVO DE LOS VIAJES EN CURSO
 class HistorialUbicacionViajeCreate(BaseModel):
     id_viaje: int
     ubicacion: GeoPoint
@@ -559,7 +535,6 @@ class HistorialUbicacionViajeResponse(BaseModel):
 # | ESQUEMA "cgo_soc" |
 # ---------------------
 
-# LISTA DE AMIGOS PARA PERMITIR CHATS ENTRE PASAJEROS
 class AmigoCreate(BaseModel):
     id_usuario1: int
     id_usuario2: int
@@ -584,7 +559,6 @@ class AmigoResponse(BaseModel):
     usuario2: Optional[UsuarioResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
-# GESTIÓN DE LAS SALAS DE CHAT (VINCULADAS A UN VIAJE O DIRECTAS)
 class ChatCreate(BaseModel):
     id_tipo_chat: int
     id_viaje: Optional[int] = None
@@ -600,7 +574,6 @@ class ChatResponse(BaseModel):
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)
 
-# MENSAJES DENTRO DE LOS CHATS
 class MensajeChatCreate(BaseModel):
     id_chat: int
     id_emisor: int
@@ -623,7 +596,6 @@ class MensajeChatResponse(BaseModel):
     emisor: Optional[UsuarioBasicoResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
-# RESPUESTA DE BANDEJA DE ENTRADA (LISTA DE CHATS CON ULTIMO MENSAJE)
 class UltimoMensajeResumen(BaseModel):
     id: int
     id_chat: int
@@ -654,7 +626,6 @@ class ChatBandejaResponse(BaseModel):
 # | ESQUEMA "cgo_adm" |
 # ---------------------
 
-# SISTEMA DE ESTRELLAS CRUZADO ENTRE CONDUCTOR Y PASAJERO
 class CalificacionCreate(BaseModel):
     id_viaje: int
     id_evaluador: int
@@ -682,7 +653,6 @@ class CalificacionResponse(BaseModel):
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)
 
-# REPORTES CON EVIDENCIAS HACÍA LOS ADMINISTRADORES
 class ReporteCreate(BaseModel):
     id_reportador: int
     id_reportado: int
@@ -713,12 +683,11 @@ class ReporteResponse(BaseModel):
     estatus_reporte: Optional[EstatusReporteResponse] = None
     model_config = ConfigDict(from_attributes = True)
 
-# SANCIONES APLICADAS A LOS USUARIOS POR LOS ADMINISTRADORES
 class SancionCreate(BaseModel):
     id_usuario: int
     id_administrador: int
     id_estatus_usuario: int
-    fecha_inicio: Optional[date] = Field(default_factory=date.today)
+    fecha_inicio: Optional[date] = Field(default_factory = date.today)
     fecha_fin: Optional[date] = None
     notas_administrador: Optional[str] = None
     nueva_calificacion_pasajero: Optional[Decimal] = Field(None, ge = Decimal("1.00"), le = Decimal("5.00"), decimal_places = 2)
@@ -747,7 +716,6 @@ class SancionResponse(BaseModel):
 # | ESQUEMA "cgo_not" |
 # ---------------------
 
-# HISTORIAL DE NOTIFICACIONES PUSH ENVIADAS A LOS USUARIOS
 class NotificacionCreate(BaseModel):
     id_usuario: int
     id_tipo_notificacion: int
@@ -767,3 +735,6 @@ class NotificacionResponse(BaseModel):
     leida: bool
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)
+
+class ReporteFiltro(BaseModel):
+    ids: List[int]

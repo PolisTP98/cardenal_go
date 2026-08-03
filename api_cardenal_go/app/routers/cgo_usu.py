@@ -19,6 +19,7 @@ from security.auth import (
     hashPassword, 
     verifyResourceOwnership
 )
+from models.schemas import RolUsuarioUpdate, UsuarioCreate, UsuarioUpdate, UsuarioResponse
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF
 from utils.imagenes import guardarImagen, eliminarImagen, RUTA_CONDUCTORES, RUTA_VEHICULOS, RUTA_PASAJEROS
 
@@ -41,15 +42,15 @@ def iniciarSesion(form_data: OAuth2PasswordRequestForm = Depends(), db: Session 
         raise HTTPException(
             status_code = status.HTTP_401_UNAUTHORIZED, 
             detail = "Matrícula o contraseña incorrectos", 
-            headers = {"WWW-Authenticate": "Bearer"},
+            headers = {"WWW-Authenticate": "Bearer"}, 
         )
     rol_principal = usuario.roles[0].rol.nombre if usuario.roles else "Pasajero"
     token = createAccessToken(data = {"sub": str(usuario.id), "role": rol_principal})
     return {
         "access_token": token, 
-        "token_type": "bearer",
-        "role": rol_principal,
-        "usuario_id": usuario.id,
+        "token_type": "bearer", 
+        "role": rol_principal, 
+        "usuario_id": usuario.id, 
         "nombre_completo": usuario.nombre_completo
     }
 
@@ -58,33 +59,117 @@ def iniciarSesion(form_data: OAuth2PasswordRequestForm = Depends(), db: Session 
 # | OPERACIONES CRUD DE USUARIOS |
 # --------------------------------
 
-@router.post("/", response_model = schemas.UsuarioResponse, status_code = status.HTTP_201_CREATED, summary = "Crear usuario")
-def crearUsuario(usuario_in: schemas.UsuarioCreate, db: Session = Depends(getDB)):
-    existe = db.query(Usuario).filter(
-        (Usuario.matricula == usuario_in.matricula) |
-        (Usuario.correo_institucional == usuario_in.correo_institucional)
+@router.post("/", response_model = UsuarioResponse, status_code = status.HTTP_201_CREATED)
+def crearUsuario(usuario_in: UsuarioCreate, db: Session = Depends(getDB)):
+    db_usuario = db.query(Usuario).filter(
+        (Usuario.correo_institucional == usuario_in.correo_institucional) |
+        (Usuario.matricula == usuario_in.matricula)
     ).first()
-    if existe:
-        raise HTTPException(status_code = 400, detail = "La matrícula o correo ya están registrados")
+    if db_usuario:
+        raise HTTPException(status_code = 400, detail = "El correo institucional o matrícula ya están registrados")
     nuevo_usuario = Usuario(
         nombre_completo = usuario_in.nombre_completo, 
         matricula = usuario_in.matricula, 
         correo_institucional = usuario_in.correo_institucional, 
-        contrasena_hash = hashPassword(usuario_in.contrasena_raw),
+        contrasena_hash = hashPassword(usuario_in.contrasena_raw), 
         url_foto_perfil = usuario_in.url_foto_perfil or "cardenal_upq.png"
     )
     db.add(nuevo_usuario)
-    db.flush()
-    nuevo_rol = RolUsuario(id_usuario = nuevo_usuario.id, id_rol = 1, id_estatus = 5)
-    db.add(nuevo_rol)
     db.commit()
     db.refresh(nuevo_usuario)
+    rol_inicial = RolUsuario(id_usuario = nuevo_usuario.id, id_rol = 1, id_estatus = 1)
+    db.add(rol_inicial)
+    db.commit()
+    nuevo_usuario.rol = "Pasajero"
     return nuevo_usuario
 
-@router.get("/", response_model = List[schemas.UsuarioResponse], summary = "Obtener todos los usuarios")
-def obtenerUsuarios(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    usuarios = db.query(Usuario).offset(skip).limit(limit).all()
+@router.get("/", response_model = List[UsuarioResponse])
+def listarUsuarios(db: Session = Depends(getDB)):
+    usuarios = db.query(Usuario).outerjoin(RolUsuario).filter(
+        (RolUsuario.id_estatus != 6) | (RolUsuario.id_estatus.is_(None))
+    ).all()
+    for u in usuarios:
+        if u.roles and len(u.roles) > 0:
+            u.rol = u.roles[0].rol.nombre
+        else:
+            u.rol = "Sin rol"
     return usuarios
+
+@router.put("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Actualizar usuario por ID")
+def actualizarUsuario(
+    usuario_id: int, 
+    usuario_in: schemas.UsuarioUpdate, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(verifyToken)
+):
+    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(usuario.id), is_admin)
+    datos = usuario_in.model_dump(exclude_unset = True)
+    if "url_foto_perfil" in datos:
+        if datos["url_foto_perfil"] is None or str(datos["url_foto_perfil"]).strip() == "":
+            datos.pop("url_foto_perfil")
+    if "contrasena_raw" in datos:
+        raw_pass = datos.pop("contrasena_raw")
+        if raw_pass and raw_pass.strip():
+            usuario.contrasena_hash = hashPassword(raw_pass)
+    for key, value in datos.items():
+        setattr(usuario, key, value)
+    db.commit()
+    db.refresh(usuario)
+    return usuario
+
+@router.get("/{usuario_id}/roles", summary = "Obtener roles de un usuario")
+def obtenerRolesUsuario(
+    usuario_id: int,
+    db: Session = Depends(getDB),
+    payload: dict = Depends(verifyToken)
+):
+    roles = db.query(RolUsuario).options(
+        joinedload(RolUsuario.rol)
+    ).filter(RolUsuario.id_usuario == usuario_id).all()
+    return [{"id_rol": r.id_rol, "nombre_rol": r.rol.nombre if r.rol else None} for r in roles]
+
+@router.get("/usuarios/{usuario_id}/estatus", response_model = schemas.RolUsuarioResponse, summary = "Obtener rol y estatus de un usuario por ID")
+def obtenerEstatusUsuario(
+    usuario_id: int, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(verifyToken)
+):
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(usuario_id), is_admin)
+    registro = db.query(RolUsuario).filter(RolUsuario.id_usuario == usuario_id).first()
+    if not registro:
+        raise HTTPException(status_code = 404, detail = "Configuración de rol y estatus no encontrada para este usuario")
+    return registro
+
+@router.put("/usuarios/{usuario_id}/estatus", response_model = schemas.RolUsuarioResponse, summary = "Crear o editar rol y estatus de un usuario por ID")
+def guardarOEditarEstatusUsuario(
+    usuario_id: int, 
+    datos_in: schemas.RolUsuarioUpdate, 
+    db: Session = Depends(getDB), 
+    payload: dict = Depends(requireRole(["Administrador", "Superadministrador"]))
+):
+    current_role = payload.get("role")
+    if current_role == "Administrador" and datos_in.id_rol == 4:
+        raise HTTPException(status_code = 403, detail = "No tienes permisos para asignar el rol de Superadministrador.")
+    registro = db.query(RolUsuario).filter(RolUsuario.id_usuario == usuario_id).first()
+    if registro and registro.id_rol == 4 and current_role == "Administrador":
+        raise HTTPException(status_code = 403, detail = "No tienes permisos para modificar a un Superadministrador")
+    if not registro:
+        id_rol = datos_in.id_rol if datos_in.id_rol is not None else 1
+        id_estatus = datos_in.id_estatus if datos_in.id_estatus is not None else 1
+        registro = RolUsuario(id_usuario = usuario_id, id_rol = id_rol, id_estatus = id_estatus)
+        db.add(registro)
+    else:
+        update_data = datos_in.model_dump(exclude_unset = True)
+        for key, value in update_data.items():
+            setattr(registro, key, value)
+    db.commit()
+    db.refresh(registro)
+    return registro
 
 @router.get("/buscar", response_model = List[schemas.UsuarioResponse])
 def buscarUsuarios(
@@ -160,32 +245,6 @@ def obtenerUsuarioPorId(usuario_id: int, db: Session = Depends(getDB), payload: 
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
-    return usuario
-
-@router.put("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Actualizar usuario por ID")
-def actualizarUsuario(
-    usuario_id: int,
-    usuario_in: schemas.UsuarioUpdate,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(usuario.id), is_admin)
-    datos = usuario_in.model_dump(exclude_unset = True)
-    if "url_foto_perfil" in datos:
-        if datos["url_foto_perfil"] is None or str(datos["url_foto_perfil"]).strip() == "":
-            datos.pop("url_foto_perfil")
-    if "contrasena_raw" in datos:
-        raw_pass = datos.pop("contrasena_raw")
-        if raw_pass and raw_pass.strip():
-            usuario.contrasena_hash = hashPassword(raw_pass)
-    for key, value in datos.items():
-        setattr(usuario, key, value)
-    db.commit()
-    db.refresh(usuario)
     return usuario
 
 @router.patch("/me/foto-perfil", response_model = schemas.UsuarioResponse, summary = "Actualizar foto de perfil del usuario autenticado")
@@ -319,19 +378,22 @@ def obtenerConductores(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 
 @router.get("/conductores/buscar", response_model = List[schemas.ConductorResponse], summary = "Buscar conductor(es) con filtros dinámicos")
 def buscarConductores(
-    usuario_id: Optional[int] = Query(None, description = "Filtrar por ID del usuario"), 
-    numero_licencia: Optional[str] = Query(None, description = "Filtrar por licencia de conducir"), 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(getDB), 
+    busqueda: Optional[str] = Query(None, description = "Busca por nombre o matrícula"),
+    licencia: Optional[str] = Query(None, description = "Busca por número de licencia"),
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(getDB),
     payload: dict = Depends(verifyToken)
 ):
-    query = db.query(Conductor)
-    if usuario_id:
-        query = query.filter(Conductor.id_usuario == usuario_id)
-    if numero_licencia:
-        query = query.filter(Conductor.licencia_conducir.ilike(f"%{numero_licencia}%"))
-    return query.offset(skip).limit(limit).all()
+    query = db.query(Conductor).join(Usuario)
+    if busqueda:
+        query = query.filter(
+            (Usuario.nombre_completo.ilike(f"%{busqueda}%")) | 
+            (Usuario.matricula.ilike(f"%{busqueda}%"))
+        )
+    if licencia:
+        query = query.filter(Conductor.licencia_conducir.ilike(f"%{licencia}%"))
+    return query.order_by(Conductor.fecha_hora_registro.desc()).offset(skip).limit(limit).all()
 
 @router.get("/conductores/{usuario_id}", response_model = schemas.ConductorResponse, summary = "Obtener perfil de conductor por ID de usuario")
 def obtenerConductorPorUsuario(
@@ -475,56 +537,6 @@ def eliminarVehiculo(vehiculo_id: int, db: Session = Depends(getDB), payload: di
     db.commit()
 
 
-# --------------------------------------------------
-# | ENDPOINTS PARA ROLES Y ESTATUS DE LOS USUARIOS |
-# --------------------------------------------------
-
-@router.get("/usuarios/{usuario_id}/estatus", response_model = schemas.RolUsuarioResponse, summary = "Obtener rol y estatus de un usuario por ID")
-def obtenerEstatusUsuario(
-    usuario_id: int, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(verifyToken)
-):
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(usuario_id), is_admin)
-    registro = db.query(RolUsuario).filter(RolUsuario.id_usuario == usuario_id).first()
-    if not registro:
-        raise HTTPException(status_code = 404, detail = "Configuración de rol y estatus no encontrada para este usuario")
-    return registro
-
-@router.get("/{usuario_id}/roles", summary = "Obtener roles de un usuario")
-def obtenerRolesUsuario(
-    usuario_id: int,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    roles = db.query(RolUsuario).options(
-        joinedload(RolUsuario.rol)
-    ).filter(RolUsuario.id_usuario == usuario_id).all()
-    return [{"id_rol": r.id_rol, "nombre_rol": r.rol.nombre if r.rol else None} for r in roles]
-
-@router.put("/usuarios/{usuario_id}/estatus", response_model = schemas.RolUsuarioResponse, summary = "Crear o editar rol y estatus de un usuario por ID")
-def guardarOEditarEstatusUsuario(
-    usuario_id: int, 
-    datos_in: schemas.RolUsuarioUpdate, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(requireRole(["Administrador", "Superadministrador"]))
-):
-    registro = db.query(RolUsuario).filter(RolUsuario.id_usuario == usuario_id).first()
-    if not registro:
-        id_rol = datos_in.id_rol if datos_in.id_rol is not None else 1
-        id_estatus = datos_in.id_estatus if datos_in.id_estatus is not None else 1
-        registro = RolUsuario(id_usuario = usuario_id, id_rol = id_rol, id_estatus = id_estatus)
-        db.add(registro)
-    else:
-        update_data = datos_in.model_dump(exclude_unset = True)
-        for key, value in update_data.items():
-            setattr(registro, key, value)
-    db.commit()
-    db.refresh(registro)
-    return registro
-
-
 # ------------------------------------------
 # | OPERACIONES CRUD DE TARJETAS PASAJEROS |
 # ------------------------------------------
@@ -580,19 +592,26 @@ def eliminarTarjeta(tarjeta_id: int, db: Session = Depends(getDB), payload: dict
 # | GENERACIÓN DE REPORTES |
 # --------------------------
 
-@router.get("/reportes/{formato}", summary = "Generar reporte de usuarios")
-def exportarReporteUsuarios(
-    formato: str,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
-):
-    lista_usuarios = db.query(Usuario).all()
-    titulo = "reporte_de_usuarios-cardenal_go"
-    if formato.lower() == "pdf":
-        return generarReportePDF(lista_usuarios, titulo)
-    elif formato.lower() == "word":
-        return generarReporteWord(lista_usuarios, titulo)
-    elif formato.lower() == "excel":
-        return generarReporteExcel(lista_usuarios, titulo)
-    else:
-        raise HTTPException(status_code = 400, detail = "Formato no soportado. Usa PDF, Word o Excel")
+@router.post("/reportes/pdf", summary = "Generar reporte dinámico de usuarios en PDF")
+def reporteUsuariosPDF(filtro: schemas.ReporteFiltro, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    usuarios = db.query(Usuario).filter(Usuario.id.in_(filtro.ids)).all()
+    usuarios_dict = {u.id: u for u in usuarios}
+    usuarios_ordenados = [usuarios_dict[id_] for id_ in filtro.ids if id_ in usuarios_dict]
+    datos = [{"ID": u.id, "Nombre": u.nombre_completo, "Matrícula": u.matricula, "Correo": u.correo_institucional, "Registro": u.fecha_hora_registro.strftime("%Y-%m-%d %H:%M")} for u in usuarios_ordenados]
+    return generarReportePDF(datos, titulo = "reporte_de_usuarios")
+
+@router.post("/reportes/excel", summary = "Generar reporte dinámico de usuarios en Excel")
+def reporteUsuariosExcel(filtro: schemas.ReporteFiltro, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    usuarios = db.query(Usuario).filter(Usuario.id.in_(filtro.ids)).all()
+    usuarios_dict = {u.id: u for u in usuarios}
+    usuarios_ordenados = [usuarios_dict[id_] for id_ in filtro.ids if id_ in usuarios_dict]
+    datos = [{"ID": u.id, "Nombre completo": u.nombre_completo, "Matrícula": u.matricula, "Correo institucional": u.correo_institucional, "Calificación de pasajero": float(u.calificacion_pasajero or 5.0), "Calificación de conductor": float(u.calificacion_conductor or 5.0), "Fecha de registro": u.fecha_hora_registro.strftime("%Y-%m-%d %H:%M:%S")} for u in usuarios_ordenados]
+    return generarReporteExcel(datos, titulo = "reporte_de_usuarios")
+
+@router.post("/reportes/word", summary = "Generar reporte dinámico de usuarios en Word")
+def reporteUsuariosWord(filtro: schemas.ReporteFiltro, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    usuarios = db.query(Usuario).filter(Usuario.id.in_(filtro.ids)).all()
+    usuarios_dict = {u.id: u for u in usuarios}
+    usuarios_ordenados = [usuarios_dict[id_] for id_ in filtro.ids if id_ in usuarios_dict]
+    datos = [{"ID": u.id, "Nombre": u.nombre_completo, "Matrícula": u.matricula, "Correo": u.correo_institucional, "Registro": u.fecha_hora_registro.strftime("%Y-%m-%d")} for u in usuarios_ordenados]
+    return generarReporteWord(datos, titulo = "reporte_de_usuarios")

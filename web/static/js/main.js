@@ -1,24 +1,62 @@
 document.addEventListener("DOMContentLoaded", function() {
+    if (typeof Chart === "undefined") {
+        console.error("Chart.js no está cargado.");
+        return;
+    }
+
     const container = document.getElementById("dashboard-container");
     if(!container) return;
 
-    const conteo = JSON.parse(container.getAttribute("data-conteo") || "{}");
-    const registros = JSON.parse(container.getAttribute("data-registros") || "[]");
+    const dashType = container.getAttribute("data-type") || "usuarios";
+
+    let conteo = {};
+    let registros = [];
+    try {
+        conteo = JSON.parse(container.getAttribute("data-conteo") || "{}");
+        registros = JSON.parse(container.getAttribute("data-registros") || "[]");
+    } catch (e) {
+        console.error("Error al parsear JSON del dashboard:", e);
+    }
+
+    let labelGraficoLineas = "Registros";
+    let colorBorde = "#0d6efd";
+    let colorFondo = "rgba(13, 110, 253, 0.15)";
+
+    if (dashType === "incidencias") {
+        labelGraficoLineas = "Incidencias registradas";
+        colorBorde = "#dc3545";
+        colorFondo = "rgba(220, 53, 69, 0.15)";
+    } else if (dashType === "viajes") {
+        labelGraficoLineas = "Viajes registrados";
+        colorBorde = "#198754";
+        colorFondo = "rgba(25, 135, 84, 0.15)";
+    } else {
+        labelGraficoLineas = "Usuarios registrados";
+    }
 
     const pieCanvas = document.getElementById("pieChart");
     if (pieCanvas) {
         const pieCtx = pieCanvas.getContext("2d");
+        const labels = Object.keys(conteo);
+        const dataValues = Object.values(conteo);
+
         new Chart(pieCtx, {
             type: "pie",
             data: {
-                labels: Object.keys(conteo), 
+                labels: labels, 
                 datasets: [{
-                    data: Object.values(conteo), 
-                    backgroundColor: ["#198754", "#0dcaf0", "#ffc107", "#dc3545", "#212529"]
+                    data: dataValues, 
+                    backgroundColor: ["#198754", "#0dcaf0", "#ffc107", "#212529", "#0d6efd", "#dc3545"]
                 }]
             },
             options: {
-                responsive: true
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
             }
         });
     }
@@ -27,17 +65,21 @@ document.addEventListener("DOMContentLoaded", function() {
     if (!lineCanvas) return;
 
     const lineCtx = lineCanvas.getContext("2d");
-    let lineChart;
+    let lineChart = null;
 
     function actualizarGraficoLineas(filtroSeleccionado) {
-        const filtrados = filtroSeleccionado === "Todos" 
+        const filtrados = (!filtroSeleccionado || filtroSeleccionado.startsWith("Todos")) 
             ? registros 
-            : registros.filter(r => (r.categoria || r.rol || r.estatus) === filtroSeleccionado);
+            : registros.filter(r => (r.rol || r.categoria || r.estatus) === filtroSeleccionado);
         
         const fechasMap = {};
         filtrados.forEach(r => {
-            const f = r.fecha || r.fecha_registro;
-            if(f) {
+            const rawFecha = r.fecha_hora_registro || r.fecha_registro || r.fecha;
+            if(rawFecha) {
+                const f = (typeof rawFecha === "string" && rawFecha.includes("T")) 
+                    ? rawFecha.split("T")[0] 
+                    : String(rawFecha).substring(0, 10);
+                
                 fechasMap[f] = (fechasMap[f] || 0) + 1;
             }
         });
@@ -54,21 +96,26 @@ document.addEventListener("DOMContentLoaded", function() {
             data: {
                 labels: fechasOrdenadas,
                 datasets: [{
-                    label: "Registros por fecha", 
+                    label: labelGraficoLineas, 
                     data: cantidades, 
-                    borderColor: "#0d6efd", 
-                    backgroundColor: "rgba(13, 110, 253, 0.1)", 
+                    borderColor: colorBorde, 
+                    backgroundColor: colorFondo, 
                     fill: true, 
-                    tension: 0.3
+                    tension: 0.3,
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                    pointBackgroundColor: colorBorde
                 }]
             },
             options: {
-                responsive: true, 
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: {
                         beginAtZero: true, 
                         ticks: {
-                            stepSize: 1
+                            stepSize: 1,
+                            precision: 0
                         }
                     }
                 }

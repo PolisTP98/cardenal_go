@@ -433,11 +433,9 @@ class Conductor(Base):
     telefono = Column(String(20), nullable = False)
     licencia_conducir = Column(String(50), unique = True, nullable = False)
     url_foto_ine = Column(String(255), nullable = False)
-    ine_valida = Column(Boolean, default = False, server_default = "false")
     clabe_interbancaria = Column(String(18))
     nombre_banco = Column(String(50))
     nombre_titular_cuenta = Column(String(255))
-    id_cuenta_pasarela = Column(String(255))
     fecha_hora_registro = Column(DateTime(timezone = True), nullable = False, server_default = text("now()"))
     # RELACIONES
     usuario = relationship(
