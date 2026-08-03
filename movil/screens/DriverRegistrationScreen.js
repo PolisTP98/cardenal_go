@@ -10,7 +10,8 @@ import PrimaryButton from '../components/PrimaryButton';
 import LoadingOverlay from '../components/LoadingOverlay';
 import Card from '../components/Card';
 import { useAuth } from '../src/context/AuthContext';
-import { registrarConductor, registrarVehiculo } from '../src/api/usuariosApi';
+import { solicitarSerConductor } from '../src/api/usuariosApi';
+import VehicleColorPicker from '../components/VehicleColorPicker';
 
 export default function DriverRegistrationScreen({ navigation }) {
   const { user, updateRole } = useAuth();
@@ -74,51 +75,45 @@ export default function DriverRegistrationScreen({ navigation }) {
 
     setLoading(true);
     try {
-      // 1. Registrar Conductor
-      const conductorFormData = new FormData();
-      conductorFormData.append('id_usuario', user.id);
-      conductorFormData.append('telefono', phone);
-      conductorFormData.append('licencia_conducir', license);
-      conductorFormData.append('foto_perfil', {
+      // 1. Enviar Solicitud Única (Conductor + Vehículo)
+      const solicitudFormData = new FormData();
+      solicitudFormData.append('id_usuario', user.id);
+      solicitudFormData.append('telefono', phone);
+      solicitudFormData.append('licencia_conducir', license);
+      solicitudFormData.append('foto_perfil', {
         uri: facePhoto.uri,
         name: facePhoto.fileName || `foto_perfil_${user.id}.jpg`,
         type: 'image/jpeg',
       });
       
-      const conductor = await registrarConductor(conductorFormData);
-
-      // 2. Registrar Vehículo
-      const vehiculoFormData = new FormData();
-      vehiculoFormData.append('id_conductor', conductor.id);
-      vehiculoFormData.append('placa', plate.toUpperCase());
-      vehiculoFormData.append('color', color);
-      vehiculoFormData.append('modelo', model);
-      vehiculoFormData.append('anio', numericYear);
+      solicitudFormData.append('placa', plate.toUpperCase());
+      solicitudFormData.append('color', color);
+      solicitudFormData.append('modelo', model);
+      solicitudFormData.append('anio', numericYear);
       
       vehiclePhotos.forEach((photo, index) => {
-        vehiculoFormData.append('fotos', {
+        solicitudFormData.append('fotos_vehiculo', {
           uri: photo.uri,
           name: photo.fileName || `vehiculo_${index}.jpg`,
           type: 'image/jpeg',
         });
       });
 
-      await registrarVehiculo(vehiculoFormData);
+      // API Call
+      await solicitarSerConductor(solicitudFormData);
 
-      // 3. Actualizar Rol en Contexto y Guardar, luego navegar al DriverDashboard
-      await updateRole('Conductor', () => {
-        Alert.alert('¡Felicidades!', 'Te has registrado exitosamente como conductor. Bienvenido.', [
-          {
-            text: 'Comenzar',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
-            }
-          }
-        ]);
-      });
+      // 2. Avisar al usuario que está pendiente de revisión
+      Alert.alert('Solicitud Enviada', 'Tu solicitud ha sido enviada y está pendiente de revisión administrativa. Te notificaremos cuando seas aprobado.', [
+        {
+          text: 'Entendido',
+          onPress: () => {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'PassengerDashboard' }],
+            });
+          },
+        },
+      ]);
     } catch (error) {
       Alert.alert('Error de registro', error.displayMessage || 'Ocurrió un error al registrar tus datos de conductor.');
     } finally {
@@ -197,11 +192,9 @@ export default function DriverRegistrationScreen({ navigation }) {
                 value={plate}
                 onChangeText={setPlate}
               />
-              <CustomInput
-                label="Color"
-                placeholder="Ej. Rojo"
-                value={color}
-                onChangeText={setColor}
+              <VehicleColorPicker
+                selectedColor={color}
+                onSelectColor={setColor}
               />
               <View style={styles.row}>
                 <View style={{ flex: 1, marginRight: 8 }}>

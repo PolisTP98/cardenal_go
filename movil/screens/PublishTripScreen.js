@@ -22,13 +22,13 @@ export default function PublishTripScreen({ navigation }) {
   const [vehicle, setVehicle] = useState(null);
 
   // Form Fields & Coordinates
-  const [origen, setOrigen] = useState('UPQ (Universidad Politécnica de Querétaro)');
-  const [destino, setDestino] = useState('Centro Histórico de Querétaro');
-  const [origenValid, setOrigenValid] = useState(true);
-  const [destinoValid, setDestinoValid] = useState(true);
-  const [origenCoords, setOrigenCoords] = useState({ latitude: 20.5891, longitude: -100.4376 });
-  const [destinoCoords, setDestinoCoords] = useState({ latitude: 20.5888, longitude: -100.3899 });
-  const [selectingTarget, setSelectingTarget] = useState('destino'); // 'origen' | 'destino'
+  const [origen, setOrigen] = useState('');
+  const [destino, setDestino] = useState('');
+  const [origenValid, setOrigenValid] = useState(false);
+  const [destinoValid, setDestinoValid] = useState(false);
+  const [origenCoords, setOrigenCoords] = useState(null);
+  const [destinoCoords, setDestinoCoords] = useState(null);
+  const [selectingTarget, setSelectingTarget] = useState('origen'); // 'origen' | 'destino'
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
   
@@ -42,10 +42,12 @@ export default function PublishTripScreen({ navigation }) {
   // Dynamic pricing handled by passengers now, so precio is fixed to 0 at trip creation
   const [precio, setPrecio] = useState('0');
 
-  const waypoints = useMemo(() => [
-    { ...origenCoords, title: `Origen: ${origen}`, color: 'green' },
-    { ...destinoCoords, title: `Destino: ${destino}`, color: 'red' },
-  ], [origenCoords, destinoCoords, origen, destino]);
+  const waypoints = useMemo(() => {
+    const pts = [];
+    if (origenCoords) pts.push({ ...origenCoords, title: `Origen: ${origen}`, color: 'green' });
+    if (destinoCoords) pts.push({ ...destinoCoords, title: `Destino: ${destino}`, color: 'red' });
+    return pts;
+  }, [origenCoords, destinoCoords, origen, destino]);
 
   useEffect(() => {
     const checkConductorAndVehicle = async () => {

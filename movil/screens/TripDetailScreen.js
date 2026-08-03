@@ -15,6 +15,7 @@ import PrimaryButton from '../components/PrimaryButton';
 import LoadingOverlay from '../components/LoadingOverlay';
 import MapaRutas, { getDistanceKm } from '../components/MapaRutas';
 import LocationSearchInput from '../components/LocationSearchInput';
+import VehicleColorBadge from '../components/VehicleColorBadge';
 
 export default function TripDetailScreen({ route, navigation }) {
   const { viajeId } = route.params;
@@ -93,8 +94,34 @@ export default function TripDetailScreen({ route, navigation }) {
     evaluatePending();
   }, [solicitudes, aiEvaluations]);
 
+  // ─── Waypoints Centralizados (Paradas Aceptadas) ─────────────────────────────
+  const sharedAcceptedStops = useMemo(() => {
+    const stops = [];
+    if (solicitudes && solicitudes.length > 0) {
+      solicitudes.filter(s => s.id_estatus === 3).forEach((s, idx) => {
+        const pName = s.pasajero?.nombre_completo?.split(' ')[0] || `Pasajero ${idx + 1}`;
+        if (s.ubicacion_recogida?.coordinates) {
+          stops.push({
+            latitude: s.ubicacion_recogida.coordinates[1],
+            longitude: s.ubicacion_recogida.coordinates[0],
+            title: `Subida: ${pName}`,
+            color: 'blue',
+          });
+        }
+        if (s.ubicacion_bajada?.coordinates) {
+          stops.push({
+            latitude: s.ubicacion_bajada.coordinates[1],
+            longitude: s.ubicacion_bajada.coordinates[0],
+            title: `Bajada: ${pName}`,
+            color: 'orange',
+          });
+        }
+      });
+    }
+    return stops;
+  }, [solicitudes]);
+
   // ─── Waypoints dinámicos para el mapa principal ──────────────────────────────
-  // Se calculan con useMemo para que el mapa reaccione cuando cambian las solicitudes
   const mainMapWaypoints = useMemo(() => {
     if (!viaje) return [];
 
@@ -115,35 +142,9 @@ export default function TripDetailScreen({ route, navigation }) {
       color: 'red',
     };
 
-    // Paradas intermedias: subidas y bajadas de solicitudes aceptadas (para todos)
-    const paradasAceptadas = [];
-    solicitudes.filter(s => s.id_estatus === 3).forEach((s, idx) => {
-      const pName = s.pasajero?.nombre_completo?.split(' ')[0] || `Pasajero ${idx + 1}`;
-      
-      // Si la recogida es diferente al origen general (o si queremos mostrarla siempre)
-      if (s.ubicacion_recogida?.coordinates) {
-        paradasAceptadas.push({
-          latitude: s.ubicacion_recogida.coordinates[1],
-          longitude: s.ubicacion_recogida.coordinates[0],
-          title: `Subida: ${pName}`,
-          color: 'blue',
-        });
-      }
-      
-      // La bajada del pasajero
-      if (s.ubicacion_bajada?.coordinates) {
-        paradasAceptadas.push({
-          latitude: s.ubicacion_bajada.coordinates[1],
-          longitude: s.ubicacion_bajada.coordinates[0],
-          title: `Bajada: ${pName}`,
-          color: 'orange',
-        });
-      }
-    });
-
     // Si el pasajero actual tiene solicitud aceptada y no está en la lista general por alguna razón
     const miParada =
-      !isOwner && pasajeroSolicitud?.id_estatus === 3 && pasajeroSolicitud?.ubicacion_bajada?.coordinates && paradasAceptadas.length === 0
+      !isOwner && pasajeroSolicitud?.id_estatus === 3 && pasajeroSolicitud?.ubicacion_bajada?.coordinates && sharedAcceptedStops.length === 0
         ? [{
             latitude: pasajeroSolicitud.ubicacion_bajada.coordinates[1],
             longitude: pasajeroSolicitud.ubicacion_bajada.coordinates[0],
@@ -152,8 +153,8 @@ export default function TripDetailScreen({ route, navigation }) {
           }]
         : [];
 
-    return [origen, ...paradasAceptadas, ...miParada, destino];
-  }, [viaje, solicitudes, pasajeroSolicitud]);
+    return [origen, ...sharedAcceptedStops, ...miParada, destino];
+  }, [viaje, sharedAcceptedStops, pasajeroSolicitud]);
 
   // Waypoints para el mapa de solicitud del pasajero (dentro de la card Solicitar Asiento)
   const requestMapWaypoints = useMemo(() => {
@@ -168,6 +169,9 @@ export default function TripDetailScreen({ route, navigation }) {
       title: `Origen: ${viaje.nombre_origen || 'Origen'}`,
       color: 'green',
     });
+
+    // 1.5. Insertar paradas intermedias de otras solicitudes ya aceptadas
+    pts.push(...sharedAcceptedStops);
 
     // 2. Insertar punto de recogida del pasajero como parada (si aplica)
     if (passengerPickupCoords) {
@@ -198,7 +202,7 @@ export default function TripDetailScreen({ route, navigation }) {
     });
     
     return pts;
-  }, [viaje, passengerDropoffCoords, pasajeroDestino, passengerPickupCoords, pasajeroOrigen]);
+  }, [viaje, passengerDropoffCoords, pasajeroDestino, passengerPickupCoords, pasajeroOrigen, sharedAcceptedStops]);
 
   // ─── Acciones del pasajero ────────────────────────────────────────────────────
   const handleCreateRequest = async () => {
@@ -517,7 +521,8 @@ export default function TripDetailScreen({ route, navigation }) {
             {viaje.vehiculo && (
               <View style={styles.infoItem}>
                 <Ionicons name="car" size={20} color={COLORS.textSecondary} />
-                <Text style={styles.infoVal}>{viaje.vehiculo.modelo} ({viaje.vehiculo.color})</Text>
+                <Text style={styles.infoVal}>{viaje.vehiculo.modelo}</Text>
+                <VehicleColorBadge colorName={viaje.vehiculo.color} style={{ marginLeft: 6 }} />
               </View>
             )}
           </View>
@@ -576,9 +581,12 @@ export default function TripDetailScreen({ route, navigation }) {
             {viaje.vehiculo?.fotos && Array.isArray(viaje.vehiculo.fotos) && viaje.vehiculo.fotos.length > 0 && (
               <View style={styles.vehiclePhotosContainer}>
                 <Text style={styles.vehiclePhotosTitle}>📸 Fotos del Vehículo</Text>
-                <Text style={styles.vehiclePhotosSubtitle}>
-                  {viaje.vehiculo.modelo} · {viaje.vehiculo.color} · Placa: {viaje.vehiculo.placa}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                  <Text style={styles.vehiclePhotosSubtitle}>
+                    {viaje.vehiculo.modelo} · Placa: {viaje.vehiculo.placa}
+                  </Text>
+                  <VehicleColorBadge colorName={viaje.vehiculo.color} style={{ marginLeft: 8 }} />
+                </View>
                 <View style={styles.vehiclePhotosList}>
                   {viaje.vehiculo.fotos.map((foto, index) => (
                     <Image
@@ -722,8 +730,9 @@ export default function TripDetailScreen({ route, navigation }) {
                           height={160}
                           waypoints={[
                             { latitude: viaje.ubicacion_inicio?.coordinates?.[1] || 20.5891, longitude: viaje.ubicacion_inicio?.coordinates?.[0] || -100.4376, title: 'Origen Conductor', color: 'green' },
-                            ...(item.ubicacion_recogida?.coordinates ? [{ latitude: item.ubicacion_recogida.coordinates[1], longitude: item.ubicacion_recogida.coordinates[0], title: 'Subida Pasajero', color: 'blue' }] : []),
-                            ...(item.ubicacion_bajada?.coordinates ? [{ latitude: item.ubicacion_bajada.coordinates[1], longitude: item.ubicacion_bajada.coordinates[0], title: 'Bajada Pasajero', color: 'orange' }] : []),
+                            ...sharedAcceptedStops,
+                            ...(item.id_estatus !== 3 && item.ubicacion_recogida?.coordinates ? [{ latitude: item.ubicacion_recogida.coordinates[1], longitude: item.ubicacion_recogida.coordinates[0], title: 'Subida Solicitada', color: '#3b82f6' }] : []),
+                            ...(item.id_estatus !== 3 && item.ubicacion_bajada?.coordinates ? [{ latitude: item.ubicacion_bajada.coordinates[1], longitude: item.ubicacion_bajada.coordinates[0], title: 'Bajada Solicitada', color: '#f97316' }] : []),
                             { latitude: tripDestLat, longitude: tripDestLon, title: 'Destino Final', color: 'red' }
                           ]}
                         />

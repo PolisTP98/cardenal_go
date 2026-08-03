@@ -137,24 +137,39 @@ export default function MapaRutas({
 
     setIsLoadingRoute(true);
     const apiKey = '9890f506-bf03-45e8-884c-0f8d8bbf46fd';
-    const pointsQuery = optimized
-      .map(p => `point=${p.latitude},${p.longitude}`)
-      .join('&');
-
-    const url = `https://graphhopper.com/api/1/route?${pointsQuery}&profile=car&locale=es&calc_points=true&key=${apiKey}`;
-
+    
     try {
-      const response = await axios.get(url);
-      const encodedPolyline = response.data.paths[0].points;
-      const decoded = polyline.decode(encodedPolyline);
-      const coords = decoded.map(point => ({
-        latitude: point[0],
-        longitude: point[1],
-      }));
+      const MAX_POINTS_PER_REQUEST = 5;
+      let allCoords = [];
+      
+      // Chunking: Send requests in segments to avoid GraphHopper's 5-point limit on the free tier
+      for (let i = 0; i < optimized.length - 1; i += (MAX_POINTS_PER_REQUEST - 1)) {
+        const chunk = optimized.slice(i, i + MAX_POINTS_PER_REQUEST);
+        const pointsQuery = chunk
+          .map(p => `point=${p.latitude},${p.longitude}`)
+          .join('&');
+          
+        const url = `https://graphhopper.com/api/1/route?${pointsQuery}&profile=car&locale=es&calc_points=true&key=${apiKey}`;
+        const response = await axios.get(url);
+        
+        const encodedPolyline = response.data.paths[0].points;
+        const decoded = polyline.decode(encodedPolyline);
+        const chunkCoords = decoded.map(point => ({
+          latitude: point[0],
+          longitude: point[1],
+        }));
+        
+        // Remove overlapping start point from subsequent chunks to avoid duplicate vertex
+        if (i > 0 && chunkCoords.length > 0) {
+          chunkCoords.shift();
+        }
+        
+        allCoords = [...allCoords, ...chunkCoords];
+      }
       
       // Save to cache
-      routeCache.set(key, coords);
-      setRouteCoords(coords);
+      routeCache.set(key, allCoords);
+      setRouteCoords(allCoords);
     } catch (error) {
       if (error.response?.status === 429) {
         rateLimitCooldownUntil = Date.now() + 60000; // 60s cooldown

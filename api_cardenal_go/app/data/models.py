@@ -405,6 +405,13 @@ class SolicitudConductor(Base):
     clabe_interbancaria = Column(String(18))
     nombre_banco = Column(String(50))
     nombre_titular_cuenta = Column(String(255))
+    url_foto_perfil = Column(String(255), nullable = True)
+    placa = Column(String(15), nullable = True)
+    color = Column(String(30), nullable = True)
+    modelo = Column(String(50), nullable = True)
+    anio = Column(SmallInteger, nullable = True)
+    fotos_vehiculo = Column(JSONB, nullable = True)
+    motivo_rechazo = Column(String(500), nullable = True)
     estatus = Column(String(20), default = "Pendiente", server_default = "Pendiente")
     fecha_hora_registro = Column(DateTime(timezone = True), nullable = False, server_default = text("now()"))
 

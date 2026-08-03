@@ -296,6 +296,13 @@ class SolicitudConductorResponse(BaseModel):
     clabe_interbancaria: Optional[str]
     nombre_banco: Optional[str]
     nombre_titular_cuenta: Optional[str]
+    url_foto_perfil: Optional[str]
+    placa: Optional[str]
+    color: Optional[str]
+    modelo: Optional[str]
+    anio: Optional[int]
+    fotos_vehiculo: Optional[list]
+    motivo_rechazo: Optional[str]
     estatus: str
     fecha_hora_registro: datetime
     model_config = ConfigDict(from_attributes = True)
@@ -341,7 +348,7 @@ class VehiculoCreate(BaseModel):
     placa: str = Field(..., max_length = 15)
     color: str = Field(..., max_length = 30)
     modelo: str = Field(..., max_length = 50)
-    anio: int = Field(..., gt = 1990, le = datetime.now().year + 1)
+    anio: int = Field(..., gt=1990, le = datetime.now().year + 1)
     fotos: Dict[str, Any] = Field(..., min_length = 1)
 
 class VehiculoUpdate(BaseModel):
@@ -402,8 +409,24 @@ class ViajeCreate(BaseModel):
     @field_validator("fecha")
     @classmethod
     def validarViajeFuturo(cls, v: date) -> date:
-        if v < date.today():
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Mexico_City")
+        hoy_local = datetime.now(tz).date()
+        
+        if v < hoy_local:
             raise ValueError("No se pueden programar viajes en el pasado")
+        return v
+
+    @field_validator("hora_inicio")
+    @classmethod
+    def validarHoraFutura(cls, v: time, info: Any) -> time:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Mexico_City")
+        now_local = datetime.now(tz)
+        
+        if "fecha" in info.data and info.data["fecha"] == now_local.date():
+            if v < now_local.time():
+                raise ValueError("La hora de inicio no puede ser en el pasado para viajes de hoy")
         return v
 
 class ViajeUpdate(BaseModel):

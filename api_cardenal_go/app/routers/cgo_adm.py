@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from data.database import getDB
-from data.models import Calificacion, Reporte, Sancion, Usuario
+from data.models import Calificacion, Reporte, Sancion, Usuario, SolicitudConductor, Conductor, Vehiculo, RolUsuario, Notificacion, Viaje
 from models import schemas
 from security.auth import verifyToken, requireRole, verifyResourceOwnership
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF

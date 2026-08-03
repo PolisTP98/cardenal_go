@@ -197,7 +197,7 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-    container_name: cardenal_go_frontend
+    container_name: cardenal_go_web
     restart: always
     env_file: .env
     environment:

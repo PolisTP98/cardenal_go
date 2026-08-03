@@ -5,11 +5,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, Form, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import date
 from data.database import getDB
-from data.models import Usuario, Rol, RolUsuario, Conductor, Vehiculo, TarjetaPasajero
+from data.models import Usuario, Rol, RolUsuario, Conductor, Vehiculo, TarjetaPasajero, SolicitudConductor
 from models import schemas
 from security.auth import (
     verifyPassword, 
@@ -30,6 +31,11 @@ from utils.imagenes import guardarImagen, eliminarImagen, RUTA_CONDUCTORES, RUTA
 
 router = APIRouter(prefix = "/api/usu", tags = ["Usuarios"])
 
+VEHICLE_COLORS = [
+    'Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Azul Marino',
+    'Verde', 'Amarillo', 'Naranja', 'Cafe', 'Beige', 'Dorado'
+]
+
 
 # ----------------------------
 # | AUTENTICACIÓN Y SESIONES |
@@ -47,10 +53,37 @@ def iniciarSesion(form_data: OAuth2PasswordRequestForm = Depends(), db: Session 
     rol_principal = usuario.roles[0].rol.nombre if usuario.roles else "Pasajero"
     token = createAccessToken(data = {"sub": str(usuario.id), "role": rol_principal})
     return {
+        "access_token": token,
         "access_token": token, 
         "token_type": "bearer", 
         "role": rol_principal, 
         "usuario_id": usuario.id, 
+        "nombre_completo": usuario.nombre_completo
+    }
+@router.post("/cambiar-rol", summary = "Intercambiar rol activo y generar nuevo token")
+def cambiarRol(datos: dict, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    nuevo_rol = datos.get("nuevo_rol")
+    ROLES_VALIDOS = ["Pasajero", "Conductor", "Administrador", "Superadministrador"]
+    if nuevo_rol not in ROLES_VALIDOS:
+        raise HTTPException(status_code = 400, detail = f"Rol no válido. Opciones: {ROLES_VALIDOS}")
+    user_id = payload.get("sub")
+    usuario = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+    
+    # Si es Conductor, verificar que el usuario tenga perfil de conductor registrado
+    if nuevo_rol == "Conductor":
+        conductor = db.query(Conductor).filter(Conductor.id_usuario == usuario.id).first()
+        if not conductor:
+            raise HTTPException(status_code = 403, detail = "No tienes un perfil de conductor registrado. Registra tu perfil de conductor primero.")
+
+    # Emitir nuevo token con el rol actualizado
+    token = createAccessToken(data = {"sub": str(usuario.id), "role": nuevo_rol})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": nuevo_rol,
+        "usuario_id": usuario.id,
         "nombre_completo": usuario.nombre_completo
     }
 
@@ -296,6 +329,68 @@ def eliminarUsuario(
 # | CONDUCTORES Y VEHÍCULOS          |
 # ------------------------------------
 
+@router.post("/solicitudes_conductores", response_model = schemas.SolicitudConductorResponse, status_code = status.HTTP_201_CREATED, summary = "Solicitar ser conductor")
+async def solicitarConductor(
+    id_usuario:              int            = Form(...),
+    telefono:                str            = Form(...),
+    licencia_conducir:       str            = Form(...),
+    clabe_interbancaria:     Optional[str]  = Form(None),
+    nombre_banco:            Optional[str]  = Form(None),
+    nombre_titular_cuenta:   Optional[str]  = Form(None),
+    placa:                   str            = Form(None),
+    color:                   str            = Form(None),
+    modelo:                  str            = Form(None),
+    anio:                    int            = Form(None),
+    foto_perfil:             UploadFile     = File(...),
+    fotos_vehiculo:          List[UploadFile] = File(None),
+    db:                      Session        = Depends(getDB),
+    payload:                 dict           = Depends(verifyToken)
+):
+    usuario = db.query(Usuario).filter(Usuario.id == id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
+
+    # Guardar foto de perfil temporalmente
+    ruta_foto_perfil = await guardarImagen(
+        archivo          = foto_perfil,
+        carpeta_destino  = RUTA_CONDUCTORES,
+        nombre_base      = f"req_conductor_{id_usuario}"
+    )
+
+    # Guardar fotos vehiculo
+    rutas_fotos_vehiculo = []
+    if fotos_vehiculo:
+        for idx, foto in enumerate(fotos_vehiculo):
+            ruta = await guardarImagen(
+                archivo         = foto,
+                carpeta_destino = RUTA_VEHICULOS,
+                nombre_base     = f"req_vehiculo_{id_usuario}_{idx}"
+            )
+            rutas_fotos_vehiculo.append(ruta)
+
+    solicitud = SolicitudConductor(
+        id_usuario = id_usuario,
+        telefono = telefono,
+        licencia_conducir = licencia_conducir,
+        url_foto_ine = "ine_placeholder.png",
+        clabe_interbancaria = clabe_interbancaria,
+        nombre_banco = nombre_banco,
+        nombre_titular_cuenta = nombre_titular_cuenta,
+        url_foto_perfil = ruta_foto_perfil,
+        placa = placa,
+        color = color,
+        modelo = modelo,
+        anio = anio,
+        fotos_vehiculo = rutas_fotos_vehiculo,
+        estatus = "Pendiente"
+    )
+
+    db.add(solicitud)
+    db.commit()
+    db.refresh(solicitud)
+    return solicitud
+
+
 @router.post("/conductores", response_model = schemas.ConductorResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar datos de conductor")
 async def registrarConductor(
     id_usuario:              int            = Form(...),
@@ -349,6 +444,8 @@ async def registrarConductor(
     nuevo_conductor = Conductor(**datos_conductor)
     db.add(nuevo_conductor)
     db.flush()
+    # Actualizar rol a Conductor (id_rol=2)
+    rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == id_usuario).first()
 
 
 # -----------------------------------
@@ -395,17 +492,20 @@ def buscarConductores(
         query = query.filter(Conductor.licencia_conducir.ilike(f"%{licencia}%"))
     return query.order_by(Conductor.fecha_hora_registro.desc()).offset(skip).limit(limit).all()
 
-@router.get("/conductores/{usuario_id}", response_model = schemas.ConductorResponse, summary = "Obtener perfil de conductor por ID de usuario")
-def obtenerConductorPorUsuario(
-    usuario_id: int,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
+@router.get("/conductores/usuario/{usuario_id}", response_model = schemas.ConductorResponse, summary = "Obtener conductor por ID de usuario")
+def obtenerConductorPorUsuario(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     conductor = db.query(Conductor).options(
         joinedload(Conductor.vehiculos)
     ).filter(Conductor.id_usuario == usuario_id).first()
     if not conductor:
-        raise HTTPException(status_code = 404, detail = "Perfil de conductor no encontrado")
+        raise HTTPException(status_code = 404, detail = "Conductor no encontrado")
+    return conductor
+
+@router.get("/conductores/{conductor_id}", response_model = schemas.ConductorResponse, summary = "Obtener conductor por ID de conductor")
+def obtenerConductorPorId(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    # Busca EXCLUSIVAMENTE por ID de conductor (cgo_usu.conductores.id)
+    # Para buscar por id_usuario usa: GET /conductores/usuario/{usuario_id}
+    conductor = db.query(Conductor).filter(Conductor.id == conductor_id).first()
     return conductor
 
 @router.patch("/conductores/{conductor_id}", response_model = schemas.ConductorResponse, summary = "Actualizar conductor por ID")
@@ -430,9 +530,7 @@ def eliminarConductor(conductor_id: int, db: Session = Depends(getDB), payload: 
     db.commit()
 
 
-# ---------------------------------
 # | OPERACIONES CRUD DE VEHÍCULOS |
-# ---------------------------------
 
 @router.post("/vehiculos/", response_model = schemas.VehiculoResponse, status_code = status.HTTP_201_CREATED, summary = "Registrar vehículo", include_in_schema = False)
 async def crearVehiculo(
@@ -466,6 +564,10 @@ async def crearVehiculo(
         )
         rutas_fotos.append(ruta)
 
+    # Validar el color contra la lista permitida
+    if color not in VEHICLE_COLORS:
+        raise HTTPException(status_code=400, detail=f"Color inválido. Los colores permitidos son: {', '.join(VEHICLE_COLORS)}")
+
     nuevo_vehiculo = Vehiculo(
         id_conductor = conductor.id,
         placa        = placa.upper(),
@@ -475,8 +577,14 @@ async def crearVehiculo(
         fotos        = rutas_fotos
     )
     db.add(nuevo_vehiculo)
-    db.commit()
-    db.refresh(nuevo_vehiculo)
+    
+    try:
+        db.commit()
+        db.refresh(nuevo_vehiculo)
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Error de integridad al guardar el vehículo (revisa la placa y los datos enviados).")
+        
     return nuevo_vehiculo
 
 @router.get("/vehiculos/", response_model = List[schemas.VehiculoResponse], summary = "Obtener todos los vehículos", include_in_schema = False)
@@ -505,7 +613,11 @@ def buscarVehiculos(
         query = query.filter(Vehiculo.anio == anio)
     return query.offset(skip).limit(limit).all()
 
-@router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor")
+@router.get("/vehiculos/conductor/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor por ID")
+def obtenerVehiculosPorConductor(conductor_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    return db.query(Vehiculo).filter(Vehiculo.id_conductor == conductor_id).all()
+
+@router.get("/vehiculos/{conductor_id}", response_model = List[schemas.VehiculoResponse], summary = "Obtener vehículos de un conductor por ID")
 def obtenerVehiculosConductor(
     conductor_id: int,
     db: Session = Depends(getDB),
@@ -526,14 +638,12 @@ def actualizarVehiculo(vehiculo_id: int, vehiculo_in: schemas.VehiculoUpdate, db
     db.refresh(vehiculo)
     return vehiculo
 
-@router.delete("/vehiculos/{vehiculo_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar vehículo por ID")
 def eliminarVehiculo(vehiculo_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
     vehiculo = db.query(Vehiculo).filter(Vehiculo.id == vehiculo_id).first()
     if not vehiculo:
         raise HTTPException(status_code = 404, detail = "Vehículo no encontrado")
     is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
     verifyResourceOwnership(payload.get("sub"), str(vehiculo.conductor.id_usuario), is_admin)
-    db.delete(vehiculo)
     db.commit()
 
 
