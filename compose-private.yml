@@ -1,13 +1,7 @@
-# -------------------------------------------------
-# | REDES PARA AISLAMIENTO Y COMUNICACIÓN INTERNA |
-# -------------------------------------------------
 networks:
   cardenal_go_network:
-    driver: bridge
+    external: true
 
-# ------------------------------------------------------
-# | VOLÚMENES PARA GARANTIZAR LA PERSISTENCIA DE DATOS |
-# ------------------------------------------------------
 volumes:
   postgres_data:
   pgadmin_data:
@@ -27,8 +21,6 @@ services:
       POSTGRES_DB: ${DB_DATABASE}
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -55,8 +47,6 @@ services:
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
       PGADMIN_CONFIG_SERVER_MODE: 'True'
       PGADMIN_CONFIG_CHECK_VERSION: 'False'
-    ports:
-      - "8080:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
@@ -73,15 +63,13 @@ services:
       dockerfile: Dockerfile
     container_name: cardenal_go_backend
     restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     env_file: .env
     environment:
       - WATCHFILES_FORCE_POLLING=true
-    ports:
-      - "8000:8000"
     volumes:
       - ./api_cardenal_go:/app
-      - ./Imagenes:/app/Imagenes   # Persistencia de imágenes locales
+      - ./Imagenes:/app/Imagenes
     depends_on:
       db:
         condition: service_healthy
@@ -98,21 +86,71 @@ services:
     container_name: cardenal_go_ridesharing_ai
     restart: always
     env_file: .env
-    ports:
-      - "8001:8001"
     volumes:
       - ./ridesharing_ai:/app
     networks:
       - cardenal_go_network
 
+  # -------------------------------------------------------------------------
+  # | (5) CLÚSTER FRONTEND / PANEL WEB (Flask) - 3 CONTENEDORES PARA HAPROXY|
+  # -------------------------------------------------------------------------
+  web_1:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: cardenal_go_web_1
+    restart: always
+    env_file: .env
+    environment:
+      - API_URL=${API_URL}
+      - FRONTEND_SECRET_KEY=${FRONTEND_SECRET_KEY}
+    volumes:
+      - ./web:/app
+    depends_on:
+      - backend
+    networks:
+      - cardenal_go_network
+
+  web_2:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: cardenal_go_web_2
+    restart: always
+    env_file: .env
+    environment:
+      - API_URL=${API_URL}
+      - FRONTEND_SECRET_KEY=${FRONTEND_SECRET_KEY}
+    volumes:
+      - ./web:/app
+    depends_on:
+      - backend
+    networks:
+      - cardenal_go_network
+
+  web_3:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: cardenal_go_web_3
+    restart: always
+    env_file: .env
+    environment:
+      - API_URL=${API_URL}
+      - FRONTEND_SECRET_KEY=${FRONTEND_SECRET_KEY}
+    volumes:
+      - ./web:/app
+    depends_on:
+      - backend
+    networks:
+      - cardenal_go_network
+
   # -----------------------------------
-  # | (5) STACK DE MONITOREO          |
+  # | (6) STACK DE MONITOREO          |
   # -----------------------------------
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus-lab
-    ports:
-      - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -131,11 +169,11 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grafana-lab
-    ports:
-      - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL}
+      GF_SERVER_SERVE_FROM_SUB_PATH: ${GF_SERVER_SERVE_FROM_SUB_PATH}
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:
@@ -147,8 +185,6 @@ services:
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor-lab
-    ports:
-      - "8081:8080"
     privileged: true
     devices:
       - /dev/kmsg:/dev/kmsg
@@ -165,8 +201,6 @@ services:
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: postgres-exporter-lab
-    ports:
-      - "9187:9187"
     env_file: .env
     environment:
       DATA_SOURCE_NAME: "${DATABASE_URL}?sslmode=disable"
@@ -180,8 +214,6 @@ services:
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter-lab
-    ports:
-      - "9100:9100"
     command:
       - "--path.rootfs=/host"
     volumes:
@@ -189,25 +221,3 @@ services:
     networks:
       - cardenal_go_network
     restart: unless-stopped
-
-  # ------------------------------------------------------------------
-  # | (6) FRONTEND PARA SUPERADMINISTRADORES/ADMINISTRADORES (Flask) |
-  # ------------------------------------------------------------------
-  frontend:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    container_name: cardenal_go_web
-    restart: always
-    env_file: .env
-    environment:
-      - API_URL=${API_URL}
-      - FRONTEND_SECRET_KEY=${FRONTEND_SECRET_KEY}
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./web:/app
-    depends_on:
-      - backend
-    networks:
-      - cardenal_go_network

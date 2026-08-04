@@ -1,0 +1,34 @@
+networks:
+  cardenal_go_network:
+    external: true
+
+services:
+  # -------------------------------------------------------------
+  # | PROXY INVERSO Y BALANCEADOR DE CARGA (HAProxy)            |
+  # -------------------------------------------------------------
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: cardenal_go_haproxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8404:8404"
+    volumes:
+      - ${PWD}/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ${PWD}/haproxy/certs:/usr/local/etc/haproxy/certs:ro
+    networks:
+      - cardenal_go_network
+
+  # -------------------------------------------------------------
+  # | GENERADOR Y RENOVADOR AUTOMÁTICO DE CERTIFICADOS (Certbot)|
+  # -------------------------------------------------------------
+  certbot:
+    image: certbot/certbot:latest
+    container_name: cardenal_go_certbot
+    volumes:
+      - ./haproxy/certs:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while true; do certbot renew; sleep 12d & wait $${!}; done;'"
+    networks:
+      - cardenal_go_network

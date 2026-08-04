@@ -52,7 +52,15 @@ async def lifespan(app: FastAPI):
 # Crear estructura de carpetas de imágenes si no existe, antes de instanciar o montar
 crearEstructuraCarpetas()
 
-app = FastAPI(title = "API Cardenal GO", lifespan = lifespan)
+app = FastAPI(
+    title = "API Cardenal GO", 
+    root_path = "/api", 
+    lifespan = lifespan
+)
+
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
 
 @app.exception_handler(IntegrityError)
 async def integrity_exception_handler(request: Request, exc: IntegrityError):
