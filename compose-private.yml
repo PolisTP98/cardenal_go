@@ -47,6 +47,7 @@ services:
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
       PGADMIN_CONFIG_SERVER_MODE: 'True'
       PGADMIN_CONFIG_CHECK_VERSION: 'False'
+      SCRIPT_NAME: '/pgadmin'
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
