@@ -4,7 +4,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import List, Optional
 from datetime import date
 from data.database import getDB
@@ -59,12 +59,13 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
     db.refresh(nuevo_viaje)
     return nuevo_viaje
 
-@router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
+@router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener o buscar viajes")
 def obtenerViajes(
     skip: int = 0, 
     limit: int = 100, 
-    id_estatus: Optional[int] = Query(None, description = "Filtrar por estatus (1=Programado, 2=En curso)"),
+    id_estatus: Optional[int] = Query(None, alias="estatus_id", description = "Filtrar por estatus (1=Programado, 2=En curso)"),
     fecha: Optional[str] = Query(None, description = "Filtrar por fecha YYYY-MM-DD"),
+    vehiculo_id: Optional[int] = Query(None, description = "Filtrar por ID del vehiculo"),
     db: Session = Depends(getDB), 
     payload: dict = Depends(verifyToken)
 ):
@@ -72,35 +73,20 @@ def obtenerViajes(
         joinedload(Viaje.vehiculo).joinedload(Vehiculo.conductor).joinedload(Conductor.usuario),
         joinedload(Viaje.estatus)
     )
-    if id_estatus:
-        query = query.filter(Viaje.id_estatus == id_estatus)
-    if fecha:
-        query = query.filter(Viaje.fecha == fecha)
-    return query.offset(skip).limit(limit).all()
 
-@router.get("/buscar", response_model = List[schemas.ViajeResponse], summary = "Buscar viaje(s) con filtros dinámicos")
-def buscarViajes(
-    vehiculo_id: Optional[int] = Query(None, description = "Filtrar por ID del vehiculo"), 
-    estatus_id: Optional[int] = Query(None, description = "Filtrar por ID del estatus"), 
-    fecha: Optional[date] = Query(None, description = "Filtrar por fecha"), 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(verifyToken)
-):
-    query = db.query(Viaje)
     user_id = payload.get("sub")
     user_role = payload.get("role")
 
     if user_role == "Pasajero" and user_id:
         query = query.join(Viaje.vehiculo).join(Vehiculo.conductor).filter(Conductor.id_usuario != int(user_id))
 
-    if vehiculo_id:
-        query = query.filter(Viaje.id_vehiculo == vehiculo_id)
-    if estatus_id:
-        query = query.filter(Viaje.id_estatus == estatus_id)
+    if id_estatus:
+        query = query.filter(Viaje.id_estatus == id_estatus)
     if fecha:
         query = query.filter(Viaje.fecha == fecha)
+    if vehiculo_id:
+        query = query.filter(Viaje.id_vehiculo == vehiculo_id)
+        
     return query.offset(skip).limit(limit).all()
 
 @router.get("/conductor/{usuario_id}", response_model = List[schemas.ViajeResponse], summary = "Obtener viajes del conductor por ID de usuario")
@@ -119,46 +105,8 @@ def obtenerViajesConductor(
         joinedload(Viaje.vehiculo),
         joinedload(Viaje.estatus),
         joinedload(Viaje.solicitudes)
-    ).filter(Viaje.id_vehiculo.in_(vehiculo_ids)).order_by(Viaje.fecha.desc()).all()
+    ).filter(Viaje.id_vehiculo.in_(vehiculo_ids)).order_by(Viaje.fecha_hora_registro.desc()).all()
     return viajes
-
-@router.get("/{viaje_id}", response_model = schemas.ViajeResponse, summary = "Obtener viaje por ID")
-def obtenerViajePorId(viaje_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    viaje = db.query(Viaje).options(
-        joinedload(Viaje.vehiculo).joinedload(Vehiculo.conductor).joinedload(Conductor.usuario),
-        joinedload(Viaje.estatus)
-    ).filter(Viaje.id == viaje_id).first()
-    if not viaje:
-        raise HTTPException(status_code = 404, detail = "Viaje no encontrado")
-    return viaje
-
-@router.put("/{viaje_id}", response_model = schemas.ViajeResponse, summary = "Actualizar viaje por ID")
-def actualizarViaje(
-    viaje_id: int,
-    viaje_in: schemas.ViajeUpdate,
-    db: Session = Depends(getDB),
-    payload: dict = Depends(verifyToken)
-):
-    viaje = db.query(Viaje).filter(Viaje.id == viaje_id).first()
-    if not viaje or not viaje.vehiculo or not viaje.vehiculo.conductor:
-        raise HTTPException(status_code = 404, detail = "Viaje o datos asociados no encontrados")
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
-    for key, value in viaje_in.model_dump(exclude_unset = True).items():
-        setattr(viaje, key, value)
-    db.commit()
-    db.refresh(viaje)
-    return viaje
-
-@router.delete("/{viaje_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar viaje por ID")
-def eliminarViaje(viaje_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    viaje = db.query(Viaje).filter(Viaje.id == viaje_id).first()
-    if not viaje or not viaje.vehiculo or not viaje.vehiculo.conductor:
-        raise HTTPException(status_code = 404, detail = "Viaje o datos asociados no encontrados")
-    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
-    verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
-    db.delete(viaje)
-    db.commit()
 
 
 # ---------------------------------------------
@@ -205,12 +153,8 @@ def crearSolicitud(solicitud_in: schemas.SolicitudViajeCreate, db: Session = Dep
     db.refresh(nueva_solicitud)
     return nueva_solicitud
 
-@router.get("/solicitudes/", response_model = List[schemas.SolicitudViajeResponse], summary = "Obtener todas las solicitudes de viajes")
-def obtenerSolicitudes(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(SolicitudViaje).offset(skip).limit(limit).all()
-
-@router.get("/solicitudes/buscar", response_model = List[schemas.SolicitudViajeResponse], summary = "Buscar solicitud(es) de viaje(s) con filtros dinámicos")
-def buscarSolicitudes(
+@router.get("/solicitudes/", response_model = List[schemas.SolicitudViajeResponse], summary = "Obtener o buscar solicitudes de viajes")
+def obtenerSolicitudes(
     viaje_id: Optional[int] = Query(None, description = "Filtrar por ID del viaje"), 
     pasajero_id: Optional[int] = Query(None, description = "Filtrar por ID del pasajero"), 
     estatus_id: Optional[int] = Query(None, description = "Filtrar por ID del estatus"), 
@@ -241,16 +185,43 @@ def obtenerSolicitudesPasajero(
     ).filter(SolicitudViaje.id_pasajero == pasajero_id).order_by(SolicitudViaje.fecha_hora_registro.desc()).all()
     return solicitudes
 
-@router.get("/{viaje_id}/solicitudes", response_model = List[schemas.SolicitudViajeResponse], summary = "Solicitudes de un viaje (para conductor)")
+@router.get("/{viaje_id}/solicitudes", response_model = List[schemas.SolicitudViajeResponse], summary = "Solicitudes de un viaje (para conductor y pasajero)")
 def obtenerSolicitudesViaje(
     viaje_id: int,
     db: Session = Depends(getDB),
-    payload: dict = Depends(requireRole(["Conductor"]))
+    payload: dict = Depends(verifyToken)
 ):
-    solicitudes = db.query(SolicitudViaje).options(
+    user_id = payload.get("sub")
+    user_role = payload.get("role")
+
+    viaje = db.query(Viaje).filter(Viaje.id == viaje_id).first()
+    if not viaje:
+        raise HTTPException(status_code = 404, detail = "Viaje no encontrado")
+
+    is_owner = False
+    if viaje.vehiculo and viaje.vehiculo.conductor:
+        is_owner = (viaje.vehiculo.conductor.id_usuario == int(user_id))
+    is_admin = user_role in ["Superadministrador", "Administrador"]
+
+    solicitudes_query = db.query(SolicitudViaje).options(
         joinedload(SolicitudViaje.pasajero),
         joinedload(SolicitudViaje.estatus)
-    ).filter(SolicitudViaje.id_viaje == viaje_id).order_by(SolicitudViaje.fecha_hora_registro.asc()).all()
+    ).filter(SolicitudViaje.id_viaje == viaje_id)
+
+    if not is_owner and not is_admin:
+        solicitudes_query = solicitudes_query.filter(
+            or_(SolicitudViaje.id_estatus == 3, SolicitudViaje.id_pasajero == int(user_id))
+        )
+
+    solicitudes = solicitudes_query.order_by(SolicitudViaje.fecha_hora_registro.asc()).all()
+
+    if not is_owner and not is_admin:
+        for s in solicitudes:
+            if s.id_pasajero != int(user_id) and s.pasajero:
+                s.pasajero.nombre_completo = "Pasajero"
+                s.pasajero.telefono = None
+                s.pasajero.email = None
+
     return solicitudes
 
 @router.get("/solicitudes/{solicitud_id}", response_model = schemas.SolicitudViajeResponse, summary = "Obtener solicitud de viaje por ID")
@@ -330,12 +301,8 @@ def crearPago(pago_in: schemas.PagoTransferenciaCreate, db: Session = Depends(ge
     db.refresh(nuevo_pago)
     return nuevo_pago
 
-@router.get("/pagos/", response_model = List[schemas.PagoTransferenciaResponse], summary = "Obtener todos los pagos/transferencias")
-def obtenerPagos(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(PagoTransferencia).offset(skip).limit(limit).all()
-
-@router.get("/pagos/buscar", response_model = List[schemas.PagoTransferenciaResponse], summary = "Buscar pago(s)/transferencia(s) con filtros dinámicos")
-def buscarPagos(
+@router.get("/pagos/", response_model = List[schemas.PagoTransferenciaResponse], summary = "Obtener o buscar pagos/transferencias")
+def obtenerPagos(
     solicitud_id: Optional[int] = Query(None, description = "Filtrar por ID de la solicitud de viaje"), 
     pasajero_id: Optional[int] = Query(None, description = "Filtrar por ID del pasajero"), 
     estatus_pago_id: Optional[int] = Query(None, description = "Filtrar por ID del estatus"), 
@@ -405,12 +372,8 @@ def crearHistorialUbicacion(historial_in: schemas.HistorialUbicacionViajeCreate,
     db.refresh(nuevo_historial)
     return nuevo_historial
 
-@router.get("/historial-ubicacion/", response_model = List[schemas.HistorialUbicacionViajeResponse], summary = "Obtener todos los historiales de ubicaciones")
-def obtenerHistorialUbicaciones(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(HistorialUbicacionViaje).offset(skip).limit(limit).all()
-
-@router.get("/historial-ubicacion/buscar", response_model = List[schemas.HistorialUbicacionViajeResponse], summary = "Buscar historial(es) de ubicaciones con filtros dinámicos")
-def buscarHistorialUbicaciones(
+@router.get("/historial-ubicacion/", response_model = List[schemas.HistorialUbicacionViajeResponse], summary = "Obtener o buscar historial de ubicaciones")
+def obtenerHistorialUbicaciones(
     viaje_id: Optional[int] = Query(None, description = "Filtrar por ID del viaje"), 
     skip: int = 0, 
     limit: int = 100, 
@@ -555,6 +518,69 @@ def reporteViajesPDF(
     db: Session = Depends(getDB), 
     payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))
 ):
+    lista_viajes = db.query(Viaje).all()
+    titulo = "reporte_de_viajes-cardenal_go"
+    if formato.lower() == "pdf":
+        return generarReportePDF(lista_viajes, titulo)
+    elif formato.lower() == "word":
+        return generarReporteWord(lista_viajes, titulo)
+    elif formato.lower() == "excel":
+        return generarReporteExcel(lista_viajes, titulo)
+    else:
+        raise HTTPException(status_code = 400, detail = "Formato no soportado. Usa PDF, Word o Excel")
+
+# -----------------------------------------------
+# | RUTAS DINAMICAS DE VIAJE (Al final siempre) |
+# -----------------------------------------------
+
+@router.get("/{viaje_id}", response_model = schemas.ViajeResponse, summary = "Obtener viaje por ID")
+def obtenerViajePorId(viaje_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    viaje = db.query(Viaje).options(
+        joinedload(Viaje.vehiculo).joinedload(Vehiculo.conductor).joinedload(Conductor.usuario),
+        joinedload(Viaje.estatus)
+    ).filter(Viaje.id == viaje_id).first()
+    if not viaje:
+        raise HTTPException(status_code = 404, detail = "Viaje no encontrado")
+
+    user_id = payload.get("sub")
+    user_role = payload.get("role")
+
+    if user_role == "Pasajero" and user_id and viaje.vehiculo and viaje.vehiculo.conductor:
+        if viaje.vehiculo.conductor.id_usuario == int(user_id):
+            raise HTTPException(
+                status_code = 403, 
+                detail = "No puedes acceder a los detalles de tus propios viajes desde el modo pasajero. Administra tus viajes desde el modo conductor."
+            )
+
+    return viaje
+
+@router.put("/{viaje_id}", response_model = schemas.ViajeResponse, summary = "Actualizar viaje por ID")
+def actualizarViaje(
+    viaje_id: int,
+    viaje_in: schemas.ViajeUpdate,
+    db: Session = Depends(getDB),
+    payload: dict = Depends(verifyToken)
+):
+    viaje = db.query(Viaje).filter(Viaje.id == viaje_id).first()
+    if not viaje or not viaje.vehiculo or not viaje.vehiculo.conductor:
+        raise HTTPException(status_code = 404, detail = "Viaje o datos asociados no encontrados")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
+    for key, value in viaje_in.model_dump(exclude_unset = True).items():
+        setattr(viaje, key, value)
+    db.commit()
+    db.refresh(viaje)
+    return viaje
+
+@router.delete("/{viaje_id}", status_code = status.HTTP_204_NO_CONTENT, summary = "Eliminar viaje por ID")
+def eliminarViaje(viaje_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    viaje = db.query(Viaje).filter(Viaje.id == viaje_id).first()
+    if not viaje or not viaje.vehiculo or not viaje.vehiculo.conductor:
+        raise HTTPException(status_code = 404, detail = "Viaje o datos asociados no encontrados")
+    is_admin = payload.get("role") in ["Superadministrador", "Administrador"]
+    verifyResourceOwnership(payload.get("sub"), str(viaje.vehiculo.conductor.id_usuario), is_admin)
+    db.delete(viaje)
+    db.commit()
     lista_viajes_db = db.query(Viaje).filter(Viaje.id.in_(filtro.ids)).all()
     viajes_dict = {v.id: v for v in lista_viajes_db}
     viajes_ordenados = [viajes_dict[id_] for id_ in filtro.ids if id_ in viajes_dict]

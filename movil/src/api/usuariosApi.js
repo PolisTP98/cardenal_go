@@ -1,10 +1,6 @@
 import apiClient from './apiClient';
 
-// GET /api/usu/me
-export const getMe = async () => {
-  const r = await apiClient.get('/api/usu/me');
-  return r.data;
-};
+
 
 // GET /api/usu/:id
 export const getUsuario = async (id) => {
@@ -33,6 +29,12 @@ export const solicitarSerConductor = async (formData) => {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return r.data;
+};
+
+// GET /api/usu/solicitudes_conductores/me
+export const getMiSolicitudConductor = async () => {
+  const r = await apiClient.get('/api/usu/solicitudes_conductores/me');
   return r.data;
 };
 

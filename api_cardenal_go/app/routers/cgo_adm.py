@@ -287,6 +287,129 @@ def reporteIncidenciasExcel(
     ]
     return generarReporteExcel(datos, titulo = "reporte_de_incidencias")
 
+@router.get("/dashboard/usuarios", summary="Obtener estadísticas de usuarios")
+def obtenerDashboardUsuarios(db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    total = db.query(Usuario).count()
+    pasajeros = db.query(RolUsuario).filter(RolUsuario.id_rol == 1).count()
+    conductores = db.query(RolUsuario).filter(RolUsuario.id_rol == 2).count()
+    admins = db.query(RolUsuario).filter(RolUsuario.id_rol == 3).count()
+    superadmins = db.query(RolUsuario).filter(RolUsuario.id_rol == 4).count()
+    recientes = db.query(Usuario).order_by(Usuario.fecha_hora_registro.desc()).limit(10).all()
+    # Serialize to schemas.UsuarioResponse structure or dict manually if needed. 
+    # FastAPI does it automatically, but to avoid ORM issues we let FastAPI handle it.
+    
+    return {
+        "estadisticas": {
+            "total": total,
+            "pasajeros": pasajeros,
+            "conductores": conductores,
+            "administradores": admins,
+            "superadministradores": superadmins
+        },
+        "recientes": recientes
+    }
+
+@router.get("/dashboard/viajes", summary="Obtener estadísticas de viajes")
+def obtenerDashboardViajes(db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    total = db.query(Viaje).count()
+    activos = db.query(Viaje).filter(Viaje.id_estatus.in_([1, 2, 4])).count()
+    finalizados = db.query(Viaje).filter(Viaje.id_estatus == 3).count()
+    cancelados = db.query(Viaje).filter(Viaje.id_estatus == 5).count()
+    recientes = db.query(Viaje).order_by(Viaje.id.desc()).limit(10).all()
+    
+    return {
+        "estadisticas": {
+            "total": total,
+            "activos": activos,
+            "finalizados": finalizados,
+            "cancelados": cancelados
+        },
+        "recientes": recientes
+    }
+
+@router.get("/dashboard/incidencias", summary="Obtener estadísticas de incidencias")
+def obtenerDashboardIncidencias(db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    total = db.query(Reporte).count()
+    pendientes = db.query(Reporte).filter(Reporte.id_estatus == 1).count()
+    resueltas = db.query(Reporte).filter(Reporte.id_estatus == 3).count()
+    en_proceso = db.query(Reporte).filter(Reporte.id_estatus == 2).count()
+    return {
+        "total": total,
+        "pendientes": pendientes,
+        "resueltas": resueltas,
+        "en_proceso": en_proceso
+    }
+
+# ----------------------------------------------------
+# | APROBACIÓN DE CONDUCTORES (NUEVO FLUJO UNIFICADO) |
+# ----------------------------------------------------
+
+@router.get("/solicitudes_conductores", response_model=List[schemas.SolicitudConductorResponse], summary="Obtener solicitudes de conductores pendientes")
+def obtenerSolicitudesPendientes(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    return db.query(SolicitudConductor).filter(SolicitudConductor.estatus == "Pendiente").offset(skip).limit(limit).all()
+
+@router.post("/solicitudes_conductores/{solicitud_id}/procesar", summary="Aprobar o rechazar solicitud de conductor")
+def procesarSolicitudConductor(solicitud_id: int, schema_in: schemas.ProcesarSolicitudSchema, db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
+    print(f"[DEBUG] procesarSolicitudConductor -> ID: {solicitud_id} | Payload Recibido: {schema_in}")
+    solicitud = db.query(SolicitudConductor).filter(SolicitudConductor.id == solicitud_id).first()
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    
+    if solicitud.estatus != "Pendiente":
+        raise HTTPException(status_code=400, detail="Esta solicitud ya fue procesada")
+
+    if schema_in.accion == "Aprobar":
+        # 1. Crear Conductor
+        nuevo_conductor = Conductor(
+            id_usuario=solicitud.id_usuario,
+            telefono=solicitud.telefono,
+            licencia_conducir=solicitud.licencia_conducir,
+            url_foto_ine=solicitud.url_foto_ine,
+            clabe_interbancaria=solicitud.clabe_interbancaria,
+            nombre_banco=solicitud.nombre_banco,
+            nombre_titular_cuenta=solicitud.nombre_titular_cuenta
+        )
+        db.add(nuevo_conductor)
+        db.flush()
+
+        # 2. Crear Vehículo
+        nuevo_vehiculo = Vehiculo(
+            id_conductor=nuevo_conductor.id,
+            placa=solicitud.placa,
+            color=solicitud.color,
+            modelo=solicitud.modelo,
+            anio=solicitud.anio,
+            fotos=solicitud.fotos_vehiculo or []
+        )
+        db.add(nuevo_vehiculo)
+
+        # 3. Actualizar Rol a Conductor
+        rol_usuario = db.query(RolUsuario).filter(RolUsuario.id_usuario == solicitud.id_usuario).first()
+        if rol_usuario:
+            rol_usuario.id_rol = 2
+
+        # 4. Actualizar foto de perfil
+        if solicitud.url_foto_perfil:
+            usuario = db.query(Usuario).filter(Usuario.id == solicitud.id_usuario).first()
+            if usuario:
+                usuario.url_foto_perfil = solicitud.url_foto_perfil
+
+        solicitud.estatus = "Aprobada"
+        
+        # 5. Notificar
+        notif = Notificacion(id_usuario=solicitud.id_usuario, id_tipo_notificacion=1, titulo="Solicitud Aprobada", cuerpo="¡Felicidades! Ahora eres conductor de Cardenal GO.")
+        db.add(notif)
+        
+    elif schema_in.accion == "Rechazar":
+        solicitud.estatus = "Rechazada"
+        solicitud.motivo_rechazo = schema_in.motivo_rechazo
+        notif = Notificacion(id_usuario=solicitud.id_usuario, id_tipo_notificacion=1, titulo="Solicitud Rechazada", cuerpo=f"Tu solicitud fue rechazada. Motivo: {schema_in.motivo_rechazo}")
+        db.add(notif)
+    else:
+        raise HTTPException(status_code=400, detail="Acción inválida")
+
+    db.commit()
+    return {"mensaje": f"Solicitud {schema_in.accion.lower()} correctamente."}
 @router.post("/reportes/word", summary = "Generar reporte dinámico de incidencias en Word")
 def reporteIncidenciasWord(
     filtro: schemas.ReporteFiltro, 

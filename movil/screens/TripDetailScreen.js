@@ -54,7 +54,7 @@ export default function TripDetailScreen({ route, navigation }) {
       const tripDriverId = conductor?.id_usuario || conductor?.usuario?.id;
       const isOwner = tripDriverId != null && String(tripDriverId) === String(user.id);
 
-      // Fetch all requests for both driver and passenger to map the route
+      // Conductor y Pasajero consultan las solicitudes del viaje (la API ahora filtra por seguridad)
       const reqs = await getSolicitudesViaje(viajeId);
       setSolicitudes(reqs);
 
@@ -79,6 +79,11 @@ export default function TripDetailScreen({ route, navigation }) {
   // Auto-evaluate pending requests with AI
   useEffect(() => {
     const evaluatePending = async () => {
+      // Solo el propietario del viaje puede evaluar IAs
+      const tripDriverId = viaje?.vehiculo?.conductor?.id_usuario || viaje?.vehiculo?.conductor?.usuario?.id;
+      const isOwner = tripDriverId != null && String(tripDriverId) === String(user.id);
+      if (!isOwner) return;
+
       const pending = solicitudes.filter(s => s.id_estatus === 1 && !aiEvaluations[s.id]);
       if (pending.length === 0) return;
 
@@ -92,7 +97,7 @@ export default function TripDetailScreen({ route, navigation }) {
       }
     };
     evaluatePending();
-  }, [solicitudes, aiEvaluations]);
+  }, [solicitudes, aiEvaluations, viaje, user.id]);
 
   // ─── Waypoints Centralizados (Paradas Aceptadas) ─────────────────────────────
   const sharedAcceptedStops = useMemo(() => {

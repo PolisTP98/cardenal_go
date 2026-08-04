@@ -22,6 +22,7 @@ from security.auth import (
 )
 from models.schemas import RolUsuarioUpdate, UsuarioCreate, UsuarioUpdate, UsuarioResponse
 from utils.reportes import generarReporteWord, generarReporteExcel, generarReportePDF
+from utils.validaciones import validar_placa_queretaro
 from utils.imagenes import guardarImagen, eliminarImagen, RUTA_CONDUCTORES, RUTA_VEHICULOS, RUTA_PASAJEROS
 
 
@@ -204,7 +205,7 @@ def guardarOEditarEstatusUsuario(
     db.refresh(registro)
     return registro
 
-@router.get("/buscar", response_model = List[schemas.UsuarioResponse])
+@router.get("/buscar", response_model = List[schemas.UsuarioResponse], summary = "Buscar usuario(s) con filtros dinámicos")
 def buscarUsuarios(
     busqueda: Optional[str] = Query(None), 
     rol: Optional[str] = Query(None), 
@@ -224,8 +225,15 @@ def buscarUsuarios(
         )
     if rol:
         query = query.filter(Rol.nombre == rol)
-    if current_role == "Administrador":
-        query = query.filter((Rol.nombre != "Superadministrador") | (RolUsuario.id_rol.is_(None)))
+    
+    # Excluir siempre a usuarios administradores del buscador para funcionalidad social
+    query = query.filter(~Rol.nombre.in_(["Administrador", "Superadministrador"]))
+
+    # Excluir al propio usuario que realiza la búsqueda
+    current_user_id = payload.get("sub")
+    if current_user_id:
+        query = query.filter(Usuario.id != int(current_user_id))
+
     if fecha_inicio:
         query = query.filter(func.date(Usuario.fecha_hora_registro) >= fecha_inicio)
     if fecha_fin:
@@ -263,19 +271,17 @@ def reactivarUsuario(
     db.commit()
     return {"status": "ok", "message": f"Usuario {usuario_id} reactivado con éxito"}
 
-@router.get("/me", response_model = schemas.UsuarioResponse, summary = "Obtener perfil del usuario autenticado")
-def obtenerPerfilUsuarioActual(db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code = status.HTTP_401_UNAUTHORIZED, detail = "Token inválido")
-    usuario = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
-    if not usuario:
-        raise HTTPException(status_code = status.HTTP_404_NOT_FOUND, detail = "Usuario no encontrado")
-    return usuario
-
-@router.get("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Obtener usuario por ID")
-def obtenerUsuarioPorId(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+@router.get("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Obtener usuario por ID o perfil actual con 'me'")
+def obtenerUsuarioPorId(usuario_id: str, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    if usuario_id == "me":
+        usuario_id = payload.get("sub")
+        if not usuario_id:
+            raise HTTPException(status_code = status.HTTP_401_UNAUTHORIZED, detail = "Token inválido")
+            
+    if not str(usuario_id).isdigit():
+        raise HTTPException(status_code=400, detail="ID de usuario inválido")
+        
+    usuario = db.query(Usuario).filter(Usuario.id == int(usuario_id)).first()
     if not usuario:
         raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
     return usuario
@@ -342,6 +348,7 @@ async def solicitarConductor(
     modelo:                  str            = Form(None),
     anio:                    int            = Form(None),
     foto_perfil:             UploadFile     = File(...),
+    foto_ine:                UploadFile     = File(...),
     fotos_vehiculo:          List[UploadFile] = File(None),
     db:                      Session        = Depends(getDB),
     payload:                 dict           = Depends(verifyToken)
@@ -350,11 +357,26 @@ async def solicitarConductor(
     if not usuario:
         raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
 
+    # Verificar si ya existe una solicitud pendiente
+    solicitud_existente = db.query(SolicitudConductor).filter(
+        SolicitudConductor.id_usuario == id_usuario,
+        SolicitudConductor.estatus == "Pendiente"
+    ).first()
+    if solicitud_existente:
+        raise HTTPException(status_code = 400, detail = "Ya tienes una solicitud de conductor pendiente de revisión.")
+
     # Guardar foto de perfil temporalmente
     ruta_foto_perfil = await guardarImagen(
         archivo          = foto_perfil,
         carpeta_destino  = RUTA_CONDUCTORES,
         nombre_base      = f"req_conductor_{id_usuario}"
+    )
+
+    # Guardar foto INE
+    ruta_foto_ine = await guardarImagen(
+        archivo          = foto_ine,
+        carpeta_destino  = RUTA_CONDUCTORES,
+        nombre_base      = f"req_ine_{id_usuario}"
     )
 
     # Guardar fotos vehiculo
@@ -372,12 +394,12 @@ async def solicitarConductor(
         id_usuario = id_usuario,
         telefono = telefono,
         licencia_conducir = licencia_conducir,
-        url_foto_ine = "ine_placeholder.png",
+        url_foto_ine = ruta_foto_ine,
         clabe_interbancaria = clabe_interbancaria,
         nombre_banco = nombre_banco,
         nombre_titular_cuenta = nombre_titular_cuenta,
         url_foto_perfil = ruta_foto_perfil,
-        placa = placa,
+        placa = validar_placa_queretaro(placa) if placa else None,
         color = color,
         modelo = modelo,
         anio = anio,
@@ -388,6 +410,22 @@ async def solicitarConductor(
     db.add(solicitud)
     db.commit()
     db.refresh(solicitud)
+    return solicitud
+
+
+@router.get("/solicitudes_conductores/me", response_model = schemas.SolicitudConductorResponse, summary = "Obtener mi última solicitud de conductor")
+def obtenerMiSolicitudConductor(
+    db: Session = Depends(getDB),
+    payload: dict = Depends(verifyToken)
+):
+    id_usuario = int(payload.get("sub"))
+    solicitud = db.query(SolicitudConductor).filter(
+        SolicitudConductor.id_usuario == id_usuario
+    ).order_by(SolicitudConductor.fecha_hora_registro.desc()).first()
+    
+    if not solicitud:
+        raise HTTPException(status_code = 404, detail = "No se encontró ninguna solicitud de conductor para este usuario")
+        
     return solicitud
 
 
@@ -570,7 +608,7 @@ async def crearVehiculo(
 
     nuevo_vehiculo = Vehiculo(
         id_conductor = conductor.id,
-        placa        = placa.upper(),
+        placa        = validar_placa_queretaro(placa),
         color        = color,
         modelo       = modelo,
         anio         = anio,

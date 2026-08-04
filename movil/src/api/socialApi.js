@@ -121,8 +121,8 @@ export const getChatDirecto = async (otroUsuarioId) => {
 // ========================
 
 export const buscarUsuarios = async (q, excluirId = null) => {
-  const params = { q };
+  const params = { busqueda: q };
   if (excluirId) params.excluir_id = excluirId;
-  const r = await apiClient.get('/api/usu/buscar', { params });
+  const r = await apiClient.get('/api/usu/', { params });
   return r.data;
 };

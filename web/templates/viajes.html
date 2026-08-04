@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-< class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Reportes de viajes</h1>
     <div class="btn-group me-3">
         <button class="btn btn-primary" onclick="descargarReporteDinamico('word', 'via', 'fila-viaje')">Word</button>
@@ -66,79 +66,29 @@
         </thead>
         <tbody id="tbodyViajes">
             {% for r in registros %}
+            {% set u_nombre = (r.vehiculo.conductor.usuario.nombre_completo if r.vehiculo and r.vehiculo.conductor and r.vehiculo.conductor.usuario else 'Desconocido') if r.tipo_registro == 'viaje' else (r.pasajero.nombre_completo if r.pasajero else 'Desconocido') %}
+            {% set u_mat = (r.vehiculo.conductor.usuario.matricula if r.vehiculo and r.vehiculo.conductor and r.vehiculo.conductor.usuario else 'N/A') if r.tipo_registro == 'viaje' else (r.pasajero.matricula if r.pasajero else 'N/A') %}
             <tr class="fila-registro" 
-                data-tipo="{{ r.tipo }}"
-                data-rol="{{ 'pasajero' if r.tipo == 'solicitud' else 'conductor' }}"
-                data-nombre="{{ r.usuario_nombre | lower }}" 
-                data-matricula="{{ r.usuario_matricula | lower }}"
-                data-fecha="{{ (r.fecha_registro|string)[:10] if r.fecha_registro else '2000-01-01' }}"
-                data-fecha-completa="{{ r.fecha_registro }}"
+                data-tipo="{{ r.tipo_registro | default('') }}"
+                data-rol="{{ 'pasajero' if r.tipo_registro == 'solicitud' else 'conductor' }}"
+                data-nombre="{{ u_nombre | lower }}" 
+                data-matricula="{{ u_mat | lower }}"
+                data-fecha="{{ (r.fecha_hora_registro|string)[:10] if r.fecha_hora_registro else '2000-01-01' }}"
+                data-fecha-completa="{{ r.fecha_hora_registro | default('') }}"
                 data-bs-toggle="modal" 
                 data-bs-target="#modalDetalle{{ loop.index }}"
                 style="cursor: pointer;">
                 <td>
-                    <span class="badge {% if r.tipo == 'solicitud' %}bg-info{% else %}bg-primary{% endif %}">
-                        {{ r.tipo | capitalize }}
+                    <span class="badge {% if r.tipo_registro == 'viaje' %}bg-primary{% else %}bg-info{% endif %}">
+                        {{ r.tipo_registro | default('') | capitalize }}
                     </span>
                 </td>
-                <td>{{ r.usuario_nombre }}</td>
-                <td>{{ r.usuario_matricula }}</td>
-                <td>{{ r.origen }}</td>
-                <td>{{ r.destino }}</td>
-                <td>{{ (r.fecha_registro|string)[:16].replace('T', ' ') }}</td>
+                <td>{{ u_nombre }}</td>
+                <td>{{ u_mat }}</td>
+                <td>{{ r.nombre_origen | default('N/A') }}</td>
+                <td>{{ r.nombre_destino | default('N/A') }}</td>
+                <td>{{ (r.fecha_hora_registro|string)[:16].replace('T', ' ') if r.fecha_hora_registro else 'N/A' }}</td>
             </tr>
-
-            <div class="modal fade" id="modalDetalle{{ loop.index }}" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <div class="modal-header bg-dark text-white">
-                            <h5 class="modal-title">Detalles del {{ r.tipo | capitalize }}</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <p><strong>Usuario:</strong> {{ r.usuario_nombre }}</p>
-                                    <p><strong>Matrícula:</strong> {{ r.usuario_matricula }}</p>
-                                    <p><strong>Rol:</strong> {{ 'Pasajero' if r.tipo == 'solicitud' else 'Conductor' }}</p>
-                                </div>
-                                <div class="col-md-6">
-                                    <p><strong>Origen:</strong> {{ r.origen }}</p>
-                                    <p><strong>Destino:</strong> {{ r.destino }}</p>
-                                    <p><strong>Fecha de registro:</strong> {{ (r.fecha_registro|string)[:16].replace('T', ' ') }}</p>
-                                </div>
-                            </div>
-                            <hr>
-                            <h6 class="fw-bold mb-3">Información específica</h6>
-                            <div class="row">
-                                {% if r.tipo == 'viaje' %}
-                                <div class="col-md-6">
-                                    <p><strong>Fecha del viaje:</strong> {{ r.detalles.fecha }}</p>
-                                    <p><strong>Hora de inicio:</strong> {{ r.detalles.hora_inicio }}</p>
-                                    <p><strong>Precio sugerido:</strong> ${{ r.detalles.precio_sugerido }}</p>
-                                </div>
-                                <div class="col-md-6">
-                                    <p><strong>Asientos totales:</strong> {{ r.detalles.asientos_totales }}</p>
-                                    <p><strong>Asientos disponibles:</strong> {{ r.detalles.asientos_disponibles }}</p>
-                                </div>
-                                {% else %}
-                                <div class="col-md-6">
-                                    <p><strong>Precio ofertado:</strong> ${{ r.detalles.precio }}</p>
-                                    <p><strong>Desvío aceptado:</strong> {{ r.detalles.desvio_metros }} metros</p>
-                                    <p><strong>Viaje grupal:</strong> {{ 'Sí' if r.detalles.es_grupal else 'No' }}</p>
-                                </div>
-                                <div class="col-md-6">
-                                    <p><strong>Notas adicionales:</strong> {{ r.detalles.notas_adicionales or 'N/A' }}</p>
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
             {% else %}
             <tr id="filaInicialVacia">
                 <td colspan="6" class="text-center">No hay registros de viajes o solicitudes de viajes</td>
@@ -150,6 +100,63 @@
         </tbody>
     </table>
 </div>
+
+<!-- Modales de detalle (fuera de la tabla para HTML válido) -->
+{% for r in registros %}
+{% set u_nombre = (r.vehiculo.conductor.usuario.nombre_completo if r.vehiculo and r.vehiculo.conductor and r.vehiculo.conductor.usuario else 'Desconocido') if r.tipo_registro == 'viaje' else (r.pasajero.nombre_completo if r.pasajero else 'Desconocido') %}
+{% set u_mat = (r.vehiculo.conductor.usuario.matricula if r.vehiculo and r.vehiculo.conductor and r.vehiculo.conductor.usuario else 'N/A') if r.tipo_registro == 'viaje' else (r.pasajero.matricula if r.pasajero else 'N/A') %}
+<div class="modal fade" id="modalDetalle{{ loop.index }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title">Detalles del {{ r.tipo_registro | default('') | capitalize }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <p><strong>Usuario:</strong> {{ u_nombre }}</p>
+                        <p><strong>Matrícula:</strong> {{ u_mat }}</p>
+                        <p><strong>Rol:</strong> {{ 'Pasajero' if r.tipo_registro == 'solicitud' else 'Conductor' }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Origen:</strong> {{ r.nombre_origen | default('N/A') }}</p>
+                        <p><strong>Destino:</strong> {{ r.nombre_destino | default('N/A') }}</p>
+                        <p><strong>Fecha de registro:</strong> {{ (r.fecha_hora_registro|string)[:16].replace('T', ' ') if r.fecha_hora_registro else 'N/A' }}</p>
+                    </div>
+                </div>
+                
+                <h6 class="mt-4 border-bottom pb-2">Información específica</h6>
+                <div class="row">
+                    {% if r.tipo_registro == 'viaje' %}
+                    <div class="col-md-6">
+                        <p><strong>Fecha del viaje:</strong> {{ r.fecha | default('N/A') }}</p>
+                        <p><strong>Hora de inicio:</strong> {{ r.hora_inicio | default('N/A') }}</p>
+                        <p><strong>Precio sugerido:</strong> ${{ r.precio_sugerido | default('0.00') }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Asientos totales:</strong> {{ r.asientos_totales | default(0) }}</p>
+                        <p><strong>Asientos disponibles:</strong> {{ r.asientos_disponibles | default(0) }}</p>
+                    </div>
+                    {% else %}
+                    <div class="col-md-6">
+                        <p><strong>Precio ofertado:</strong> ${{ r.precio | default('0.00') }}</p>
+                        <p><strong>Desvío aceptado:</strong> {{ r.desvio_metros | default(0) }} metros</p>
+                        <p><strong>Viaje grupal:</strong> {{ 'Sí' if r.es_grupal else 'No' }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Notas adicionales:</strong> {{ r.notas_adicionales | default('N/A', true) }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
 
 <script>
 function aplicarFiltros() {

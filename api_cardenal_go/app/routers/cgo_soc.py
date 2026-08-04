@@ -11,7 +11,9 @@ from models import schemas
 from security.auth import verifyToken, requireRole, verifyResourceOwnership
 from utils.imagenes import guardarImagen, RUTA_CHAT, _REL_CHAT
 import uuid
+import uuid
 import os
+import logging
 
 
 # ---------------------------------------
@@ -36,6 +38,13 @@ def enviarSolicitudAmistad(
     u2 = db.query(Usuario).filter(Usuario.id == solicitud.id_usuario2).first()
     if not u1 or not u2:
         raise HTTPException(status_code = 404, detail = "Uno o ambos usuarios no encontrados")
+
+    if u1.id == u2.id:
+        raise HTTPException(status_code = 400, detail = "No puedes enviarte una solicitud de amistad a ti mismo")
+        
+    roles_u2 = [r.rol.nombre for r in u2.roles]
+    if "Administrador" in roles_u2 or "Superadministrador" in roles_u2:
+        raise HTTPException(status_code = 403, detail = "No se permiten solicitudes de amistad hacia administradores")
 
     # Verificar que no existe ya una relación entre ellos (en cualquier dirección)
     existente = db.query(Amigo).filter(
@@ -328,6 +337,7 @@ async def enviarMensaje(
         db.refresh(nuevo_mensaje)
     except Exception as e:
         db.rollback()
+        logging.error(f"Error al guardar el mensaje en BD: {e}", exc_info=True)
         # Clean up image if DB commit fails
         if url_imagen:
             from utils.imagenes import BASE_IMAGENES

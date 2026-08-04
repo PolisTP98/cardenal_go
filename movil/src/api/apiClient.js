@@ -4,7 +4,7 @@ import { getItem } from '../utils/storage';
 //  IP de la computadora en la red local
 // 192.168.0.13
 // 172.31.33.168
-export const API_BASE_URL = 'http://192.168.0.12:8000';
+export const API_BASE_URL = 'http://172.31.33.168:8000';
 console.log(`[API Client] Usando URL base de API: ${API_BASE_URL}`);
 
 const apiClient = axios.create({
