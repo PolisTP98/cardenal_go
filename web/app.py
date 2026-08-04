@@ -83,25 +83,29 @@ def dashboard_usuarios():
     except:
         data = {}
         
-    total = data.get("total", 0)
-    c_pas = data.get("pasajeros", 0)
-    c_con = data.get("conductores", 0)
-    c_adm = data.get("administradores", 0)
-    c_sadm = 0 # Incluido en admins por simplicidad en este conteo
+    estadisticas = data.get("estadisticas", {})
+    total = estadisticas.get("total", 0)
+    c_pas = estadisticas.get("pasajeros", 0)
+    c_con = estadisticas.get("conductores", 0)
+    c_adm = estadisticas.get("administradores", 0)
+    c_sadm = estadisticas.get("superadministradores", 0)
     
     conteo = {"Pasajero": c_pas, "Conductor": c_con, "Administrador": c_adm, "Superadministrador": c_sadm}
     regs = []
-    for u in data:
-        fecha = obtener_fecha_registro(u)
-        rol_norm = normalizar_rol(u)
-        if fecha:
-            regs.append({
-                "fecha": fecha, 
-                "fecha_registro": fecha, 
-                "fecha_hora_registro": fecha,
-                "categoria": rol_norm, 
-                "rol": rol_norm
-            })
+    
+    recientes = data.get("recientes", [])
+    if isinstance(recientes, list):
+        for u in recientes:
+            fecha = obtener_fecha_registro(u)
+            rol_norm = normalizar_rol(u)
+            if fecha:
+                regs.append({
+                    "fecha": fecha, 
+                    "fecha_registro": fecha, 
+                    "fecha_hora_registro": fecha,
+                    "categoria": rol_norm, 
+                    "rol": rol_norm
+                })
             
     return render_template(
         "dashboard_usuarios.html", 
@@ -111,7 +115,7 @@ def dashboard_usuarios():
         count_admin = c_adm, 
         count_superadmin = c_sadm, 
         conteo_roles_json = json.dumps(conteo), 
-        registros_json = json.dumps([]), 
+        registros_json = json.dumps(regs), 
         rol = session.get("role"), 
         active_page = "dashboard_usuarios"
     )

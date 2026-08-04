@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../src/context/AuthContext';
-import { getMe, getUsuario, actualizarFotoPerfil, getMiSolicitudConductor } from '../src/api/usuariosApi';
+import { getUsuario, actualizarFotoPerfil, getMiSolicitudConductor } from '../src/api/usuariosApi';
 import {
   getRelacionesSociales,
   enviarSolicitudAmistad,
@@ -35,7 +35,7 @@ export default function ProfileScreen({ navigation, route }) {
     try {
       setLoading(true);
       if (esPropioPerfil) {
-        const data = await getMe();
+        const data = await getUsuario("me");
         setProfile(data);
         if (data.originalRole !== 'Conductor') {
           try {
@@ -61,6 +61,12 @@ export default function ProfileScreen({ navigation, route }) {
         setRelacion(rel || null);
       }
     } catch (error) {
+      if (error.response?.status === 404 && esPropioPerfil) {
+        console.warn('Usuario no encontrado (sesión zombi). Cerrando sesión...');
+        Alert.alert('Sesión Expirada', 'Tu cuenta ya no está disponible. Inicia sesión nuevamente.');
+        logout();
+        return;
+      }
       console.error('Error fetching profile data:', error);
       Alert.alert('Error', 'No se pudo cargar la información del perfil.');
     } finally {

@@ -271,19 +271,17 @@ def reactivarUsuario(
     db.commit()
     return {"status": "ok", "message": f"Usuario {usuario_id} reactivado con éxito"}
 
-@router.get("/me", response_model = schemas.UsuarioResponse, summary = "Obtener perfil del usuario autenticado")
-def obtenerPerfilUsuarioActual(db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code = status.HTTP_401_UNAUTHORIZED, detail = "Token inválido")
-    usuario = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
-    if not usuario:
-        raise HTTPException(status_code = status.HTTP_404_NOT_FOUND, detail = "Usuario no encontrado")
-    return usuario
-
-@router.get("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Obtener usuario por ID")
-def obtenerUsuarioPorId(usuario_id: int, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+@router.get("/{usuario_id}", response_model = schemas.UsuarioResponse, summary = "Obtener usuario por ID o perfil actual con 'me'")
+def obtenerUsuarioPorId(usuario_id: str, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
+    if usuario_id == "me":
+        usuario_id = payload.get("sub")
+        if not usuario_id:
+            raise HTTPException(status_code = status.HTTP_401_UNAUTHORIZED, detail = "Token inválido")
+            
+    if not str(usuario_id).isdigit():
+        raise HTTPException(status_code=400, detail="ID de usuario inválido")
+        
+    usuario = db.query(Usuario).filter(Usuario.id == int(usuario_id)).first()
     if not usuario:
         raise HTTPException(status_code = 404, detail = "Usuario no encontrado")
     return usuario

@@ -59,12 +59,13 @@ def crearViaje(viaje_in: schemas.ViajeCreate, db: Session = Depends(getDB), payl
     db.refresh(nuevo_viaje)
     return nuevo_viaje
 
-@router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener todos los viajes")
+@router.get("/", response_model = List[schemas.ViajeResponse], summary = "Obtener o buscar viajes")
 def obtenerViajes(
     skip: int = 0, 
     limit: int = 100, 
-    id_estatus: Optional[int] = Query(None, description = "Filtrar por estatus (1=Programado, 2=En curso)"),
+    id_estatus: Optional[int] = Query(None, alias="estatus_id", description = "Filtrar por estatus (1=Programado, 2=En curso)"),
     fecha: Optional[str] = Query(None, description = "Filtrar por fecha YYYY-MM-DD"),
+    vehiculo_id: Optional[int] = Query(None, description = "Filtrar por ID del vehiculo"),
     db: Session = Depends(getDB), 
     payload: dict = Depends(verifyToken)
 ):
@@ -83,31 +84,9 @@ def obtenerViajes(
         query = query.filter(Viaje.id_estatus == id_estatus)
     if fecha:
         query = query.filter(Viaje.fecha == fecha)
-    return query.offset(skip).limit(limit).all()
-
-@router.get("/buscar", response_model = List[schemas.ViajeResponse], summary = "Buscar viaje(s) con filtros dinámicos")
-def buscarViajes(
-    vehiculo_id: Optional[int] = Query(None, description = "Filtrar por ID del vehiculo"), 
-    estatus_id: Optional[int] = Query(None, description = "Filtrar por ID del estatus"), 
-    fecha: Optional[date] = Query(None, description = "Filtrar por fecha"), 
-    skip: int = 0, 
-    limit: int = 100, 
-    db: Session = Depends(getDB), 
-    payload: dict = Depends(verifyToken)
-):
-    query = db.query(Viaje)
-    user_id = payload.get("sub")
-    user_role = payload.get("role")
-
-    if user_role == "Pasajero" and user_id:
-        query = query.join(Viaje.vehiculo).join(Vehiculo.conductor).filter(Conductor.id_usuario != int(user_id))
-
     if vehiculo_id:
         query = query.filter(Viaje.id_vehiculo == vehiculo_id)
-    if estatus_id:
-        query = query.filter(Viaje.id_estatus == estatus_id)
-    if fecha:
-        query = query.filter(Viaje.fecha == fecha)
+        
     return query.offset(skip).limit(limit).all()
 
 @router.get("/conductor/{usuario_id}", response_model = List[schemas.ViajeResponse], summary = "Obtener viajes del conductor por ID de usuario")
@@ -174,12 +153,8 @@ def crearSolicitud(solicitud_in: schemas.SolicitudViajeCreate, db: Session = Dep
     db.refresh(nueva_solicitud)
     return nueva_solicitud
 
-@router.get("/solicitudes/", response_model = List[schemas.SolicitudViajeResponse], summary = "Obtener todas las solicitudes de viajes")
-def obtenerSolicitudes(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(SolicitudViaje).offset(skip).limit(limit).all()
-
-@router.get("/solicitudes/buscar", response_model = List[schemas.SolicitudViajeResponse], summary = "Buscar solicitud(es) de viaje(s) con filtros dinámicos")
-def buscarSolicitudes(
+@router.get("/solicitudes/", response_model = List[schemas.SolicitudViajeResponse], summary = "Obtener o buscar solicitudes de viajes")
+def obtenerSolicitudes(
     viaje_id: Optional[int] = Query(None, description = "Filtrar por ID del viaje"), 
     pasajero_id: Optional[int] = Query(None, description = "Filtrar por ID del pasajero"), 
     estatus_id: Optional[int] = Query(None, description = "Filtrar por ID del estatus"), 
@@ -326,12 +301,8 @@ def crearPago(pago_in: schemas.PagoTransferenciaCreate, db: Session = Depends(ge
     db.refresh(nuevo_pago)
     return nuevo_pago
 
-@router.get("/pagos/", response_model = List[schemas.PagoTransferenciaResponse], summary = "Obtener todos los pagos/transferencias")
-def obtenerPagos(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(PagoTransferencia).offset(skip).limit(limit).all()
-
-@router.get("/pagos/buscar", response_model = List[schemas.PagoTransferenciaResponse], summary = "Buscar pago(s)/transferencia(s) con filtros dinámicos")
-def buscarPagos(
+@router.get("/pagos/", response_model = List[schemas.PagoTransferenciaResponse], summary = "Obtener o buscar pagos/transferencias")
+def obtenerPagos(
     solicitud_id: Optional[int] = Query(None, description = "Filtrar por ID de la solicitud de viaje"), 
     pasajero_id: Optional[int] = Query(None, description = "Filtrar por ID del pasajero"), 
     estatus_pago_id: Optional[int] = Query(None, description = "Filtrar por ID del estatus"), 
@@ -401,12 +372,8 @@ def crearHistorialUbicacion(historial_in: schemas.HistorialUbicacionViajeCreate,
     db.refresh(nuevo_historial)
     return nuevo_historial
 
-@router.get("/historial-ubicacion/", response_model = List[schemas.HistorialUbicacionViajeResponse], summary = "Obtener todos los historiales de ubicaciones")
-def obtenerHistorialUbicaciones(skip: int = 0, limit: int = 100, db: Session = Depends(getDB), payload: dict = Depends(verifyToken)):
-    return db.query(HistorialUbicacionViaje).offset(skip).limit(limit).all()
-
-@router.get("/historial-ubicacion/buscar", response_model = List[schemas.HistorialUbicacionViajeResponse], summary = "Buscar historial(es) de ubicaciones con filtros dinámicos")
-def buscarHistorialUbicaciones(
+@router.get("/historial-ubicacion/", response_model = List[schemas.HistorialUbicacionViajeResponse], summary = "Obtener o buscar historial de ubicaciones")
+def obtenerHistorialUbicaciones(
     viaje_id: Optional[int] = Query(None, description = "Filtrar por ID del viaje"), 
     skip: int = 0, 
     limit: int = 100, 

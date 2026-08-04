@@ -290,14 +290,23 @@ def reporteIncidenciasExcel(
 @router.get("/dashboard/usuarios", summary="Obtener estadísticas de usuarios")
 def obtenerDashboardUsuarios(db: Session = Depends(getDB), payload: dict = Depends(requireRole(["Superadministrador", "Administrador"]))):
     total = db.query(Usuario).count()
+    pasajeros = db.query(RolUsuario).filter(RolUsuario.id_rol == 1).count()
     conductores = db.query(RolUsuario).filter(RolUsuario.id_rol == 2).count()
-    pasajeros = db.query(RolUsuario).filter(RolUsuario.id_rol == 3).count()
-    admins = db.query(RolUsuario).filter(RolUsuario.id_rol.in_([1, 4])).count()
+    admins = db.query(RolUsuario).filter(RolUsuario.id_rol == 3).count()
+    superadmins = db.query(RolUsuario).filter(RolUsuario.id_rol == 4).count()
+    recientes = db.query(Usuario).order_by(Usuario.fecha_hora_registro.desc()).limit(10).all()
+    # Serialize to schemas.UsuarioResponse structure or dict manually if needed. 
+    # FastAPI does it automatically, but to avoid ORM issues we let FastAPI handle it.
+    
     return {
-        "total": total,
-        "pasajeros": pasajeros,
-        "conductores": conductores,
-        "administradores": admins
+        "estadisticas": {
+            "total": total,
+            "pasajeros": pasajeros,
+            "conductores": conductores,
+            "administradores": admins,
+            "superadministradores": superadmins
+        },
+        "recientes": recientes
     }
 
 @router.get("/dashboard/viajes", summary="Obtener estadísticas de viajes")
@@ -306,11 +315,16 @@ def obtenerDashboardViajes(db: Session = Depends(getDB), payload: dict = Depends
     activos = db.query(Viaje).filter(Viaje.id_estatus.in_([1, 2, 4])).count()
     finalizados = db.query(Viaje).filter(Viaje.id_estatus == 3).count()
     cancelados = db.query(Viaje).filter(Viaje.id_estatus == 5).count()
+    recientes = db.query(Viaje).order_by(Viaje.id.desc()).limit(10).all()
+    
     return {
-        "total": total,
-        "activos": activos,
-        "finalizados": finalizados,
-        "cancelados": cancelados
+        "estadisticas": {
+            "total": total,
+            "activos": activos,
+            "finalizados": finalizados,
+            "cancelados": cancelados
+        },
+        "recientes": recientes
     }
 
 @router.get("/dashboard/incidencias", summary="Obtener estadísticas de incidencias")
